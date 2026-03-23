@@ -44,41 +44,48 @@ export default function ImportsPage() {
     setUploading(true);
     setMessage(null);
     let successCount = 0;
+    const errors: string[] = [];
 
-    for (const file of validFiles) {
-      const fileName = `${Date.now()}_${file.name.replace(/\s+/g, "_")}`;
+    try {
+      for (const file of validFiles) {
+        const fileName = `${Date.now()}_${file.name.replace(/\s+/g, "_")}`;
 
-      // Upload to Supabase Storage
-      const { error: uploadError } = await supabase.storage
-        .from("documents")
-        .upload(fileName, file);
+        // Upload to Supabase Storage
+        const { error: uploadError } = await supabase.storage
+          .from("documents")
+          .upload(fileName, file);
 
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        setMessage({ type: "error", text: `Erro no upload: ${uploadError.message}` });
-        continue;
+        if (uploadError) {
+          console.error("Upload error:", uploadError);
+          errors.push(`Upload "${file.name}": ${uploadError.message}`);
+          continue;
+        }
+
+        // Get public URL
+        const { data: urlData } = supabase.storage
+          .from("documents")
+          .getPublicUrl(fileName);
+
+        // Insert record
+        const { error: insertError } = await supabase.from("documents").insert({
+          file_name: file.name,
+          file_path: fileName,
+          file_url: urlData.publicUrl,
+          file_type: file.type,
+          status: "pending",
+        });
+
+        if (insertError) {
+          console.error("Insert error:", insertError);
+          errors.push(`Banco "${file.name}": ${insertError.message}`);
+        } else {
+          successCount++;
+        }
       }
-
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from("documents")
-        .getPublicUrl(fileName);
-
-      // Insert record
-      const { error: insertError } = await supabase.from("documents").insert({
-        file_name: file.name,
-        file_path: fileName,
-        file_url: urlData.publicUrl,
-        file_type: file.type,
-        status: "pending",
-      });
-
-      if (insertError) {
-        console.error("Insert error:", insertError);
-        setMessage({ type: "error", text: `Erro no banco: ${insertError.message}` });
-      } else {
-        successCount++;
-      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Unexpected error:", err);
+      errors.push(`Erro inesperado: ${msg}`);
     }
 
     setUploading(false);
@@ -89,7 +96,7 @@ export default function ImportsPage() {
       });
       loadRecentDocs();
     } else {
-      setMessage({ type: "error", text: "Falha ao importar documentos." });
+      setMessage({ type: "error", text: errors.length > 0 ? errors.join(" | ") : "Falha ao importar documentos." });
     }
   }, []);
 
