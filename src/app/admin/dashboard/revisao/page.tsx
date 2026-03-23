@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 
 interface ReviewDoc {
@@ -125,38 +126,42 @@ export default function RevisaoPage() {
         </span>
       </div>
 
-      {/* Full-screen preview modal - uses portal-level z-index to cover sidebar, topbar, everything */}
-      {previewDoc && (
+      {/* Full-screen preview modal - rendered via Portal on document.body to escape all parent stacking contexts */}
+      {previewDoc && typeof document !== "undefined" && createPortal(
         <div
-          style={{ position: "fixed", inset: 0, zIndex: 99999 }}
+          id="preview-modal-root"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            zIndex: 2147483647,
+            background: "#000",
+          }}
         >
-          {/* Backdrop - solid black */}
-          <div
-            style={{ position: "absolute", inset: 0, background: "#000" }}
-            onClick={() => setPreviewDoc(null)}
-          />
-
           {/* Close button - ALWAYS top-right */}
           <button
             onClick={() => setPreviewDoc(null)}
             style={{
-              position: "absolute",
+              position: "fixed",
               top: 16,
               right: 16,
-              zIndex: 100000,
-              width: 44,
-              height: 44,
+              zIndex: 2147483647,
+              width: 48,
+              height: 48,
               borderRadius: "50%",
-              background: "rgba(255,255,255,0.15)",
-              border: "1px solid rgba(255,255,255,0.3)",
+              background: "rgba(255,255,255,0.2)",
+              border: "2px solid rgba(255,255,255,0.5)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               cursor: "pointer",
               color: "#fff",
+              backdropFilter: "blur(8px)",
             }}
           >
-            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+            <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -164,63 +169,62 @@ export default function RevisaoPage() {
           {/* File name - top-left */}
           <div
             style={{
-              position: "absolute",
+              position: "fixed",
               top: 16,
               left: 16,
-              zIndex: 100000,
-              background: "rgba(0,0,0,0.7)",
+              zIndex: 2147483647,
+              background: "rgba(0,0,0,0.8)",
               borderRadius: 8,
-              padding: "6px 12px",
-              maxWidth: "60%",
+              padding: "8px 14px",
+              maxWidth: "calc(100vw - 100px)",
             }}
           >
-            <p style={{ color: "rgba(255,255,255,0.8)", fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", margin: 0 }}>
+            <p style={{ color: "#fff", fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", margin: 0 }}>
               {previewDoc.file_name}
             </p>
           </div>
 
-          {/* Document content - full screen */}
-          <div
-            style={{
-              position: "absolute",
-              top: 60,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 16,
-              overflow: "auto",
-            }}
-          >
-            {previewDoc.file_type?.startsWith("image/") ? (
+          {/* Document content - fills entire screen */}
+          {previewDoc.file_type?.startsWith("image/") ? (
+            <div
+              style={{
+                width: "100vw",
+                height: "100vh",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "60px 16px 16px",
+                boxSizing: "border-box",
+                overflow: "auto",
+              }}
+            >
               <img
                 src={previewDoc.file_url}
                 alt={previewDoc.file_name}
                 style={{
                   maxWidth: "100%",
-                  maxHeight: "calc(100vh - 100px)",
+                  maxHeight: "calc(100vh - 80px)",
                   objectFit: "contain",
-                  borderRadius: 8,
                 }}
               />
-            ) : (
-              <iframe
-                src={`${previewDoc.file_url}#toolbar=1&navpanes=0&view=FitH`}
-                title={previewDoc.file_name}
-                style={{
-                  width: "100%",
-                  height: "calc(100vh - 100px)",
-                  maxWidth: 1100,
-                  border: "none",
-                  borderRadius: 8,
-                  background: "#fff",
-                }}
-              />
-            )}
-          </div>
-        </div>
+            </div>
+          ) : (
+            <iframe
+              src={`${previewDoc.file_url}#toolbar=1&navpanes=0&view=FitH`}
+              title={previewDoc.file_name}
+              style={{
+                position: "absolute",
+                top: 56,
+                left: 0,
+                width: "100vw",
+                height: "calc(100vh - 56px)",
+                border: "none",
+                background: "#fff",
+              }}
+            />
+          )}
+        </div>,
+        document.body
       )}
 
       {loading ? (
