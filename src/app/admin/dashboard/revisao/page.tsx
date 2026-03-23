@@ -128,42 +128,48 @@ export default function RevisaoPage() {
       {/* Full-screen preview modal */}
       {previewDoc && (
         <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in"
+          className="fixed inset-0 z-[100] animate-fade-in"
           onClick={() => setPreviewDoc(null)}
         >
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/85 backdrop-blur-sm" />
+
+          {/* Close button - ALWAYS fixed top-right, above everything */}
+          <button
+            onClick={() => setPreviewDoc(null)}
+            className="absolute top-4 right-4 z-[110] w-10 h-10 rounded-full bg-white/10 hover:bg-white/25 backdrop-blur-md border border-white/20 flex items-center justify-center transition-all duration-200 group"
+          >
+            <svg className="w-5 h-5 text-white group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          {/* File name label - fixed top-left */}
+          <div className="absolute top-4 left-4 z-[110] bg-black/60 backdrop-blur-md rounded-lg px-3 py-1.5 max-w-[60%]">
+            <p className="text-white/80 text-[12px] font-medium truncate">{previewDoc.file_name}</p>
+          </div>
+
+          {/* Content area - centered, scrollable */}
           <div
-            className="bg-surface-0 rounded-2xl border border-surface-border overflow-hidden w-full max-w-4xl max-h-[90vh] flex flex-col"
+            className="absolute inset-0 top-16 overflow-auto flex items-start justify-center p-4 pt-2"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal header */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-surface-border">
-              <p className="text-text-secondary text-[13px] font-medium truncate">{previewDoc.file_name}</p>
-              <button
+            {previewDoc.file_type?.startsWith("image/") ? (
+              <img
+                src={previewDoc.file_url}
+                alt={previewDoc.file_name}
+                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
                 onClick={() => setPreviewDoc(null)}
-                className="text-text-disabled hover:text-text-primary transition-colors p-1"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            {/* Modal body */}
-            <div className="flex-1 overflow-auto min-h-0">
-              {previewDoc.file_type?.startsWith("image/") ? (
-                <img
-                  src={previewDoc.file_url}
-                  alt={previewDoc.file_name}
-                  className="w-full h-auto"
-                />
-              ) : (
+              />
+            ) : (
+              <div className="w-full max-w-4xl h-[85vh] rounded-lg overflow-hidden shadow-2xl">
                 <iframe
                   src={`${previewDoc.file_url}#toolbar=1&navpanes=0&view=FitH`}
                   title={previewDoc.file_name}
-                  className="w-full border-0"
-                  style={{ height: "80vh" }}
+                  className="w-full h-full border-0 bg-white rounded-lg"
                 />
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       )}
