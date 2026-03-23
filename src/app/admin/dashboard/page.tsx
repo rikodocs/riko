@@ -215,166 +215,102 @@ export default function DashboardPage() {
             continue;
           }
 
-          let extractedText = "";
-
+          // Images → always manual review (OCR unreliable for CPF)
           if (doc.file_type?.startsWith("image/")) {
-            // OCR on image with pre-processing for better accuracy
-            addLog(`[INFO] Executando OCR na imagem...`);
-            const imageUrl = URL.createObjectURL(fileData);
-
-            // Pre-process: load image to canvas, convert to grayscale + high contrast
-            const enhancedUrl = await new Promise<string>((resolve) => {
-              const img = new Image();
-              img.onload = () => {
-                const canvas = document.createElement("canvas");
-                // Scale up small images for better OCR
-                const scale = Math.max(1, Math.min(3, 2000 / Math.max(img.width, img.height)));
-                canvas.width = img.width * scale;
-                canvas.height = img.height * scale;
-                const ctx = canvas.getContext("2d")!;
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-                // Grayscale + contrast boost
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const data = imageData.data;
-                for (let p = 0; p < data.length; p += 4) {
-                  // Grayscale
-                  const gray = data[p] * 0.299 + data[p+1] * 0.587 + data[p+2] * 0.114;
-                  // Contrast boost (1.5x) + threshold sharpening
-                  const contrast = ((gray / 255 - 0.5) * 1.8 + 0.5) * 255;
-                  const val = Math.max(0, Math.min(255, contrast));
-                  // Binarize: push to black or white for cleaner OCR
-                  const bin = val > 140 ? 255 : 0;
-                  data[p] = bin;
-                  data[p+1] = bin;
-                  data[p+2] = bin;
-                }
-                ctx.putImageData(imageData, 0, 0);
-                resolve(canvas.toDataURL("image/png"));
-              };
-              img.onerror = () => resolve(imageUrl); // fallback to original
-              img.src = imageUrl;
-            });
-
-            // Run OCR on enhanced image
-            const { data: ocrData } = await Tesseract.recognize(enhancedUrl, "por");
-            extractedText = ocrData.text;
-            addLog(`[INFO] OCR concluído: ${doc.file_name}`);
-
-            // If no CPF found, also try original (non-enhanced) image
-            if (!extractCPF(extractedText)) {
-              addLog(`[INFO] Tentando OCR na imagem original...`);
-              const { data: ocrData2 } = await Tesseract.recognize(imageUrl, "por");
-              extractedText += "\n" + ocrData2.text;
-            }
-
-            URL.revokeObjectURL(imageUrl);
-          } else if (doc.file_type === "application/pdf") {
-            addLog(`[INFO] Processando PDF...`);
-            const arrayBuffer = await fileData.arrayBuffer();
-            const pdfjsLib = await import("pdfjs-dist");
-            if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-              const workerBlob = new Blob(
-                [await (await fetch("/pdf.worker.min.mjs")).text()],
-                { type: "application/javascript" }
-              );
-              pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
-            }
-
-            const pdf = await pdfjsLib.getDocument({
-              data: arrayBuffer,
-              useWorkerFetch: false,
-              isEvalSupported: false,
-              useSystemFonts: true,
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            } as any).promise;
-            const numPages = Math.min(pdf.numPages, 5);
-
-            // Step 1: Try to extract selectable text from PDF (fast, no OCR needed)
-            addLog(`[INFO] Tentando extrair texto digital do PDF...`);
-            for (let i = 1; i <= numPages; i++) {
-              const page = await pdf.getPage(i);
-              const textContent = await page.getTextContent();
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const items = textContent.items as any[];
-
-              // Smart text joining: group by Y position (lines), then sort by X
-              const lines: { y: number; items: { x: number; str: string }[] }[] = [];
-              for (const item of items) {
-                if (!item.str) continue;
-                const y = Math.round(item.transform?.[5] || 0);
-                const x = item.transform?.[4] || 0;
-                let line = lines.find((l) => Math.abs(l.y - y) < 5);
-                if (!line) {
-                  line = { y, items: [] };
-                  lines.push(line);
-                }
-                line.items.push({ x, str: item.str });
-              }
-              // Sort lines top-to-bottom, items left-to-right
-              lines.sort((a, b) => b.y - a.y);
-              const pageText = lines
-                .map((l) => l.items.sort((a, b) => a.x - b.x).map((it) => it.str).join(" "))
-                .join("\n");
-
-              extractedText += "\n" + pageText;
-
-              // Also keep a version with all items joined without separator (catches split digits)
-              const rawJoin = items.map((it: { str?: string }) => it.str || "").join("");
-              extractedText += "\n" + rawJoin;
-
-              addLog(`[INFO] Texto página ${i}: ${pageText.substring(0, 120)}...`);
-            }
-
-            // Check if we found CPF in the digital text
-            if (extractCPF(extractedText)) {
-              addLog(`[OK] CPF encontrado no texto digital do PDF!`);
-            } else {
-              // Step 2: Fallback to OCR if no CPF found in text
-              addLog(`[INFO] Texto digital não contém CPF. Usando OCR...`);
-              const ocrTexts: string[] = [];
-              for (let i = 1; i <= numPages; i++) {
-                const page = await pdf.getPage(i);
-                const viewport = page.getViewport({ scale: 3.0 }); // Higher res for better OCR
-                const canvas = document.createElement("canvas");
-                canvas.width = viewport.width;
-                canvas.height = viewport.height;
-                const ctx = canvas.getContext("2d")!;
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                await page.render({ canvasContext: ctx, viewport } as any).promise;
-
-                // Apply grayscale + binarization for cleaner OCR
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const px = imageData.data;
-                for (let p = 0; p < px.length; p += 4) {
-                  const gray = px[p] * 0.299 + px[p+1] * 0.587 + px[p+2] * 0.114;
-                  const val = gray > 140 ? 255 : 0;
-                  px[p] = val; px[p+1] = val; px[p+2] = val;
-                }
-                ctx.putImageData(imageData, 0, 0);
-
-                const imageUrl = canvas.toDataURL("image/png");
-                const { data: ocrData } = await Tesseract.recognize(imageUrl, "por");
-                ocrTexts.push(ocrData.text);
-                addLog(`[INFO] OCR página ${i}/${numPages} concluído`);
-
-                // Check if CPF found so far in OCR results
-                if (extractCPF(ocrTexts.join("\n"))) break;
-              }
-              // Append OCR text to extracted text (keep digital text too)
-              extractedText += "\n" + ocrTexts.join("\n");
-            }
+            addLog(`[INFO] Imagem detectada → Enviado para revisão manual`);
+            await supabase
+              .from("documents")
+              .update({ status: "manual_review" })
+              .eq("id", doc.id);
+            continue;
           }
 
-          // Try to extract CPF
-          const cpf = extractCPF(extractedText);
+          if (doc.file_type !== "application/pdf") {
+            addLog(`[INFO] Tipo não suportado: ${doc.file_type} → Enviado para revisão manual`);
+            await supabase
+              .from("documents")
+              .update({ status: "manual_review" })
+              .eq("id", doc.id);
+            continue;
+          }
+
+          // PDF processing
+          addLog(`[INFO] Processando PDF...`);
+          const arrayBuffer = await fileData.arrayBuffer();
+          const pdfjsLib = await import("pdfjs-dist");
+          if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+            const workerBlob = new Blob(
+              [await (await fetch("/pdf.worker.min.mjs")).text()],
+              { type: "application/javascript" }
+            );
+            pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
+          }
+
+          const pdf = await pdfjsLib.getDocument({
+            data: arrayBuffer,
+            useWorkerFetch: false,
+            isEvalSupported: false,
+            useSystemFonts: true,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any).promise;
+          const numPages = Math.min(pdf.numPages, 5);
+
+          // Extract digital text from PDF (simple join - proven method)
+          addLog(`[INFO] Tentando extrair texto digital do PDF...`);
+          let extractedText = "";
+          for (let i = 1; i <= numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const pageText = textContent.items.map((item: any) => item.str || "").join(" ");
+            extractedText += " " + pageText;
+            addLog(`[INFO] Texto página ${i}: ${pageText.substring(0, 120)}...`);
+          }
+
+          // Check if this is a CNH Digital (auto-processable)
+          const isCNH = /CNH|HABILITA|CARTEIRA\s*NACIONAL|SENATRAN|DETRAN/i.test(extractedText);
+
+          if (!isCNH) {
+            // Not a CNH Digital → send to manual review
+            addLog(`[INFO] Documento não é CNH Digital → Enviado para revisão manual`);
+            await supabase
+              .from("documents")
+              .update({ status: "manual_review", extracted_text: extractedText.substring(0, 500) })
+              .eq("id", doc.id);
+            continue;
+          }
+
+          // CNH Digital: try to extract CPF from digital text
+          let cpf = extractCPF(extractedText);
+
+          // If not found in digital text, try OCR as fallback
+          if (!cpf) {
+            addLog(`[INFO] CPF não encontrado no texto digital da CNH. Usando OCR...`);
+            for (let i = 1; i <= numPages; i++) {
+              const page = await pdf.getPage(i);
+              const viewport = page.getViewport({ scale: 3.0 });
+              const canvas = document.createElement("canvas");
+              canvas.width = viewport.width;
+              canvas.height = viewport.height;
+              const ctx = canvas.getContext("2d")!;
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              await page.render({ canvasContext: ctx, viewport } as any).promise;
+
+              const imageUrl = canvas.toDataURL("image/png");
+              const { data: ocrData } = await Tesseract.recognize(imageUrl, "por");
+              extractedText += "\n" + ocrData.text;
+              addLog(`[INFO] OCR página ${i}/${numPages} concluído`);
+
+              cpf = extractCPF(extractedText);
+              if (cpf) break;
+            }
+          }
 
           if (cpf) {
             addLog(`[OK] CPF encontrado: ${formatCPF(cpf)} em ${doc.file_name}`);
             extracted.push({ docId: doc.id, cpf });
           } else {
-            addLog(`[AVISO] CPF não encontrado em: ${doc.file_name} → Enviado para revisão manual`);
-            // Mark as manual_review so user can manually input CPF
+            addLog(`[AVISO] CPF não encontrado na CNH: ${doc.file_name} → Enviado para revisão manual`);
             await supabase
               .from("documents")
               .update({ status: "manual_review", extracted_text: extractedText.substring(0, 500) })
