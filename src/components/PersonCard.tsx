@@ -49,6 +49,12 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
   const emails = person.emails?.length > 0 ? person.emails : (person.email ? [person.email] : []);
   const addresses = person.addresses?.length > 0 ? person.addresses : (person.address ? [person.address] : []);
 
+  // Generate clean filename from person name: "JOAO SILVA LINO NETO" -> "JOAOSILVALINETONETO.pdf"
+  const cleanName = (person.name || "documento")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove accents
+    .replace(/[^a-zA-Z0-9]/g, "") // remove spaces/special chars
+    .toUpperCase();
+
   const actionColors = {
     success: "text-success !border-success/20 hover:!bg-success-muted",
     warning: "text-warning !border-warning/20 hover:!bg-warning-muted",
@@ -171,41 +177,54 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
                 Documentos ({person.documents.length})
               </span>
               <div className="flex flex-wrap gap-3 mt-2">
-                {person.documents.map((doc) => (
-                  <div key={doc.id} className="bg-surface-0 rounded-xl border border-surface-border overflow-hidden group w-[160px]">
-                    {/* Thumbnail */}
-                    <div className="w-full h-[100px] bg-glass flex items-center justify-center overflow-hidden">
-                      {doc.file_type?.startsWith("image/") ? (
-                        <img
-                          src={doc.file_url}
-                          alt={doc.file_name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center gap-1.5">
-                          <svg className="w-8 h-8 text-text-disabled" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                          </svg>
-                          <span className="text-[9px] text-text-disabled font-mono">PDF</span>
-                        </div>
-                      )}
+                {person.documents.map((doc, di) => {
+                  const ext = doc.file_name?.split(".").pop()?.toLowerCase() || "pdf";
+                  const downloadName = `${cleanName}${person.documents!.length > 1 ? `_${di + 1}` : ""}.${ext}`;
+                  const isPdf = doc.file_type === "application/pdf" || ext === "pdf";
+                  const isImage = doc.file_type?.startsWith("image/");
+
+                  return (
+                    <div key={doc.id} className="bg-surface-0 rounded-xl border border-surface-border overflow-hidden w-[220px]">
+                      {/* Preview */}
+                      <div className="w-full h-[160px] bg-glass overflow-hidden">
+                        {isImage ? (
+                          <img
+                            src={doc.file_url}
+                            alt={doc.file_name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : isPdf ? (
+                          <iframe
+                            src={`${doc.file_url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+                            title={doc.file_name}
+                            className="w-full h-full border-0 pointer-events-none"
+                            style={{ transform: "scale(1)", transformOrigin: "top left" }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <svg className="w-10 h-10 text-text-disabled" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                      {/* Download bar */}
+                      <a
+                        href={doc.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download={downloadName}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-2 px-3 py-2.5 text-[11px] text-primary hover:bg-glass-hover transition-colors border-t border-surface-border"
+                      >
+                        <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                        </svg>
+                        <span className="truncate font-medium">{downloadName}</span>
+                      </a>
                     </div>
-                    {/* Download bar */}
-                    <a
-                      href={doc.file_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      download={doc.file_name}
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex items-center gap-2 px-3 py-2 text-[11px] text-primary hover:bg-glass-hover transition-colors"
-                    >
-                      <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                      </svg>
-                      <span className="truncate">{doc.file_name}</span>
-                    </a>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
