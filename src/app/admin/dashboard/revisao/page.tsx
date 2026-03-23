@@ -74,13 +74,19 @@ export default function RevisaoPage() {
       if (!res.ok) {
         setMessages((prev) => ({ ...prev, [doc.id]: { type: "error", text: data.error || "Erro na consulta" } }));
       } else {
-        // Check if it was a duplicate
-        const isDuplicate = data.notifications?.some((n: string) => n.includes("duplicado") || n.includes("DUPLICADO"));
+        // Check if it was a duplicate via explicit flag from API
+        const isDuplicate = data.duplicates?.length > 0;
         if (isDuplicate) {
+          // Extract notification message for details
+          const detail = data.notifications?.[0] || "CPF já existe no sistema.";
           setMessages((prev) => ({
             ...prev,
-            [doc.id]: { type: "error", text: "CPF já consultado anteriormente (duplicado)." },
+            [doc.id]: { type: "error", text: detail },
           }));
+          // Remove from list after user reads the message
+          setTimeout(() => {
+            setDocs((prev) => prev.filter((d) => d.id !== doc.id));
+          }, 3000);
         } else {
           setMessages((prev) => ({
             ...prev,

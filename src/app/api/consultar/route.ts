@@ -10,6 +10,7 @@ function formatCPF(cpf: string): string {
 export async function POST(request: Request) {
   const log: string[] = [];
   const notifications: string[] = [];
+  const duplicates: string[] = [];
 
   try {
     const supabase = createServerClient();
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
           notifications.push(
             `CPF ${formatCPF(cpf)} (${existingPerson.name || "sem nome"}) já existe no sistema${isUsed ? " e já foi utilizado" : ""}. Documento descartado.`
           );
+          duplicates.push(cpf);
 
           // Just mark as duplicate, don't link to person
           await supabase
@@ -206,7 +208,7 @@ export async function POST(request: Request) {
     }
 
     log.push(`\n[INFO] Processamento concluído.`);
-    return NextResponse.json({ log, notifications });
+    return NextResponse.json({ log, notifications, duplicates });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Erro interno";
     return NextResponse.json({ error: message }, { status: 500 });
