@@ -19,16 +19,36 @@ interface PendingDoc {
   file_type: string;
 }
 
-// Extract CPF from text
+// Extract CPF from text - tries multiple patterns and formats
 function extractCPF(text: string): string | null {
+  // Normalize text: remove extra spaces, fix common OCR mistakes
+  const normalized = text
+    .replace(/\s+/g, " ")
+    .replace(/[oO]/g, (m, offset, str) => {
+      // Replace O with 0 only when surrounded by digits
+      const before = str[offset - 1];
+      const after = str[offset + 1];
+      if (before && after && /\d/.test(before) && /\d/.test(after)) return "0";
+      return m;
+    });
+
   const patterns = [
-    /\d{3}\.\d{3}\.\d{3}-\d{2}/,
-    /\d{11}/,
+    // Standard format: 000.000.000-00
+    /\d{3}\.\d{3}\.\d{3}[-–]\d{2}/g,
+    // With spaces: 000 . 000 . 000 - 00
+    /\d{3}\s*\.\s*\d{3}\s*\.\s*\d{3}\s*[-–]\s*\d{2}/g,
+    // Just digits near "CPF" keyword
+    /(?:CPF|cpf|C\.?P\.?F\.?)\s*[:\-]?\s*(\d[\d.\-\s]{10,16}\d)/gi,
+    // 11 consecutive digits
+    /\d{11}/g,
   ];
+
   for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match) {
-      const cpf = match[0].replace(/\D/g, "");
+    const matches = normalized.matchAll(pattern);
+    for (const match of matches) {
+      // Use captured group if exists, otherwise full match
+      const raw = match[1] || match[0];
+      const cpf = raw.replace(/\D/g, "");
       if (cpf.length === 11 && !/^(\d)\1{10}$/.test(cpf)) {
         return cpf;
       }
@@ -125,7 +145,6 @@ export default function DashboardPage() {
             URL.revokeObjectURL(imageUrl);
             addLog(`[INFO] OCR concluído: ${doc.file_name}`);
           } else if (doc.file_type === "application/pdf") {
-            // For PDF: convert to image first using canvas, then OCR
             addLog(`[INFO] Processando PDF...`);
             const arrayBuffer = await fileData.arrayBuffer();
             const pdfjsLib = await import("pdfjs-dist");
@@ -144,26 +163,43 @@ export default function DashboardPage() {
               useSystemFonts: true,
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
             } as any).promise;
-            const numPages = Math.min(pdf.numPages, 5); // Max 5 pages
+            const numPages = Math.min(pdf.numPages, 5);
 
+            // Step 1: Try to extract selectable text from PDF (fast, no OCR needed)
+            addLog(`[INFO] Tentando extrair texto digital do PDF...`);
             for (let i = 1; i <= numPages; i++) {
               const page = await pdf.getPage(i);
-              const viewport = page.getViewport({ scale: 2.0 });
-              const canvas = document.createElement("canvas");
-              canvas.width = viewport.width;
-              canvas.height = viewport.height;
-              const ctx = canvas.getContext("2d")!;
+              const textContent = await page.getTextContent();
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              await page.render({ canvasContext: ctx, viewport } as any).promise;
+              const pageText = textContent.items.map((item: any) => item.str || "").join(" ");
+              extractedText += " " + pageText;
+              addLog(`[INFO] Texto página ${i}: ${pageText.substring(0, 100)}...`);
+            }
 
-              const imageUrl = canvas.toDataURL("image/png");
-              const { data: ocrData } = await Tesseract.recognize(imageUrl, "por");
-              extractedText += " " + ocrData.text;
+            // Check if we found CPF in the digital text
+            if (extractCPF(extractedText)) {
+              addLog(`[OK] CPF encontrado no texto digital do PDF!`);
+            } else {
+              // Step 2: Fallback to OCR if no CPF found in text
+              addLog(`[INFO] Texto digital não contém CPF. Usando OCR...`);
+              extractedText = "";
+              for (let i = 1; i <= numPages; i++) {
+                const page = await pdf.getPage(i);
+                const viewport = page.getViewport({ scale: 3.0 }); // Higher res for better OCR
+                const canvas = document.createElement("canvas");
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                const ctx = canvas.getContext("2d")!;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                await page.render({ canvasContext: ctx, viewport } as any).promise;
 
-              addLog(`[INFO] OCR página ${i}/${numPages} concluído`);
+                const imageUrl = canvas.toDataURL("image/png");
+                const { data: ocrData } = await Tesseract.recognize(imageUrl, "por");
+                extractedText += " " + ocrData.text;
+                addLog(`[INFO] OCR página ${i}/${numPages} concluído`);
 
-              // Stop if we found a CPF
-              if (extractCPF(extractedText)) break;
+                if (extractCPF(extractedText)) break;
+              }
             }
           }
 
