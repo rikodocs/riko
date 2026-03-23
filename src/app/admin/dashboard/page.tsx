@@ -20,41 +20,124 @@ interface PendingDoc {
   file_type: string;
 }
 
-// Extract CPF from text - tries multiple patterns and formats
+// Validate CPF using the official check digit algorithm
+function isValidCPFChecksum(cpf: string): boolean {
+  const digits = cpf.replace(/\D/g, "");
+  if (digits.length !== 11) return false;
+  // All same digits = invalid
+  if (/^(\d)\1{10}$/.test(digits)) return false;
+
+  // First check digit
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += parseInt(digits[i]) * (10 - i);
+  let remainder = (sum * 10) % 11;
+  if (remainder === 10) remainder = 0;
+  if (remainder !== parseInt(digits[9])) return false;
+
+  // Second check digit
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += parseInt(digits[i]) * (11 - i);
+  remainder = (sum * 10) % 11;
+  if (remainder === 10) remainder = 0;
+  if (remainder !== parseInt(digits[10])) return false;
+
+  return true;
+}
+
+// Fix common OCR character misreads in digit contexts
+function fixOCRDigits(text: string): string {
+  return text
+    // O/o → 0 when near digits
+    .replace(/(\d)[oO](\d)/g, "$10$2")
+    .replace(/[oO](\d{2})/g, "0$1")
+    .replace(/(\d{2})[oO]/g, "$10")
+    // l/I/| → 1 when near digits
+    .replace(/(\d)[lI|](\d)/g, "$11$2")
+    .replace(/[lI|](\d{2})/g, "1$1")
+    .replace(/(\d{2})[lI|]/g, "$11")
+    // S/s → 5 when between digits
+    .replace(/(\d)[Ss](\d)/g, "$15$2")
+    // Z/z → 2 when between digits
+    .replace(/(\d)[Zz](\d)/g, "$12$2")
+    // B → 8 when between digits
+    .replace(/(\d)B(\d)/g, "$18$2")
+    // G → 6 when between digits
+    .replace(/(\d)G(\d)/g, "$16$2")
+    // q → 9 when between digits
+    .replace(/(\d)q(\d)/g, "$19$2")
+    // D → 0 when between digits
+    .replace(/(\d)D(\d)/g, "$10$2");
+}
+
+// Extract CPF from text - comprehensive approach with validation
 function extractCPF(text: string): string | null {
-  // Normalize text: remove extra spaces, fix common OCR mistakes
-  const normalized = text
-    .replace(/\s+/g, " ")
-    .replace(/[oO]/g, (m, offset, str) => {
-      // Replace O with 0 only when surrounded by digits
-      const before = str[offset - 1];
-      const after = str[offset + 1];
-      if (before && after && /\d/.test(before) && /\d/.test(after)) return "0";
-      return m;
-    });
+  // Step 1: Normalize and fix OCR errors
+  const cleaned = text
+    .replace(/\r\n/g, "\n")
+    .replace(/[""'']/g, "")  // remove smart quotes
+    .replace(/\u00A0/g, " "); // non-breaking space → regular space
 
-  const patterns = [
-    // Standard format: 000.000.000-00
-    /\d{3}\.\d{3}\.\d{3}[-–]\d{2}/g,
-    // With spaces: 000 . 000 . 000 - 00
-    /\d{3}\s*\.\s*\d{3}\s*\.\s*\d{3}\s*[-–]\s*\d{2}/g,
-    // Just digits near "CPF" keyword
-    /(?:CPF|cpf|C\.?P\.?F\.?)\s*[:\-]?\s*(\d[\d.\-\s]{10,16}\d)/gi,
-    // 11 consecutive digits
-    /\d{11}/g,
-  ];
+  // Try with original text and OCR-fixed version
+  const variants = [cleaned, fixOCRDigits(cleaned)];
 
-  for (const pattern of patterns) {
-    const matches = normalized.matchAll(pattern);
-    for (const match of matches) {
-      // Use captured group if exists, otherwise full match
-      const raw = match[1] || match[0];
-      const cpf = raw.replace(/\D/g, "");
-      if (cpf.length === 11 && !/^(\d)\1{10}$/.test(cpf)) {
-        return cpf;
+  for (const variant of variants) {
+    // Step 2: Try structured patterns (most reliable first)
+    const patterns = [
+      // Standard format: 000.000.000-00
+      /\d{3}\.\d{3}\.\d{3}[-–—\/]\d{2}/g,
+      // With spaces around separators: 000 . 000 . 000 - 00
+      /\d{3}\s*[.,]\s*\d{3}\s*[.,]\s*\d{3}\s*[-–—\/]\s*\d{2}/g,
+      // No dots but with dash: 000000000-00
+      /\d{9}[-–—\/]\d{2}/g,
+      // Near "CPF" keyword - very aggressive capture
+      /(?:CPF|C\.?P\.?F\.?|cpf)\s*[:\-=]?\s*[nN°º]?\s*(\d[\d.\-–\/\s]{9,18}\d)/gi,
+      // Near "4d CPF" or similar field labels in CNH
+      /(?:4[d4]|CPF)\s*(\d{3}\s*[.,]?\s*\d{3}\s*[.,]?\s*\d{3}\s*[-–]?\s*\d{2})/gi,
+      // 11 consecutive digits (least reliable)
+      /\d{11}/g,
+    ];
+
+    for (const pattern of patterns) {
+      const matches = [...variant.matchAll(pattern)];
+      for (const match of matches) {
+        const raw = match[1] || match[0];
+        const cpf = raw.replace(/\D/g, "");
+        if (cpf.length === 11 && isValidCPFChecksum(cpf)) {
+          return cpf;
+        }
+      }
+    }
+
+    // Step 3: Context search - find "CPF" label and scan nearby text
+    const lines = variant.split(/\n/);
+    for (let li = 0; li < lines.length; li++) {
+      const line = lines[li];
+      if (/CPF|C\.?P\.?F/i.test(line)) {
+        // Search this line and next 2 lines for any digit sequence
+        const searchBlock = lines.slice(li, li + 3).join(" ");
+        const digitGroups = searchBlock.match(/\d[\d.\-–\/\s]{9,18}\d/g) || [];
+        for (const group of digitGroups) {
+          const cpf = group.replace(/\D/g, "");
+          if (cpf.length === 11 && isValidCPFChecksum(cpf)) {
+            return cpf;
+          }
+        }
       }
     }
   }
+
+  // Step 4: Last resort - find ANY 11-digit sequence that passes checksum
+  // even without OCR fixes, scanning all digit groups
+  const allDigitRuns = text.replace(/[^0-9]/g, " ").split(/\s+/).filter(Boolean);
+  // Also try sliding window over long digit runs
+  const longRun = text.replace(/[^0-9]/g, "");
+  for (let i = 0; i <= longRun.length - 11; i++) {
+    const candidate = longRun.substring(i, i + 11);
+    if (isValidCPFChecksum(candidate)) {
+      return candidate;
+    }
+  }
+
   return null;
 }
 
@@ -143,13 +226,57 @@ export default function DashboardPage() {
           let extractedText = "";
 
           if (doc.file_type?.startsWith("image/")) {
-            // OCR on image - runs in the browser
+            // OCR on image with pre-processing for better accuracy
             addLog(`[INFO] Executando OCR na imagem...`);
             const imageUrl = URL.createObjectURL(fileData);
-            const { data: ocrData } = await Tesseract.recognize(imageUrl, "por");
+
+            // Pre-process: load image to canvas, convert to grayscale + high contrast
+            const enhancedUrl = await new Promise<string>((resolve) => {
+              const img = new Image();
+              img.onload = () => {
+                const canvas = document.createElement("canvas");
+                // Scale up small images for better OCR
+                const scale = Math.max(1, Math.min(3, 2000 / Math.max(img.width, img.height)));
+                canvas.width = img.width * scale;
+                canvas.height = img.height * scale;
+                const ctx = canvas.getContext("2d")!;
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                // Grayscale + contrast boost
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imageData.data;
+                for (let p = 0; p < data.length; p += 4) {
+                  // Grayscale
+                  const gray = data[p] * 0.299 + data[p+1] * 0.587 + data[p+2] * 0.114;
+                  // Contrast boost (1.5x) + threshold sharpening
+                  const contrast = ((gray / 255 - 0.5) * 1.8 + 0.5) * 255;
+                  const val = Math.max(0, Math.min(255, contrast));
+                  // Binarize: push to black or white for cleaner OCR
+                  const bin = val > 140 ? 255 : 0;
+                  data[p] = bin;
+                  data[p+1] = bin;
+                  data[p+2] = bin;
+                }
+                ctx.putImageData(imageData, 0, 0);
+                resolve(canvas.toDataURL("image/png"));
+              };
+              img.onerror = () => resolve(imageUrl); // fallback to original
+              img.src = imageUrl;
+            });
+
+            // Run OCR on enhanced image
+            const { data: ocrData } = await Tesseract.recognize(enhancedUrl, "por");
             extractedText = ocrData.text;
-            URL.revokeObjectURL(imageUrl);
             addLog(`[INFO] OCR concluído: ${doc.file_name}`);
+
+            // If no CPF found, also try original (non-enhanced) image
+            if (!extractCPF(extractedText)) {
+              addLog(`[INFO] Tentando OCR na imagem original...`);
+              const { data: ocrData2 } = await Tesseract.recognize(imageUrl, "por");
+              extractedText += "\n" + ocrData2.text;
+            }
+
+            URL.revokeObjectURL(imageUrl);
           } else if (doc.file_type === "application/pdf") {
             addLog(`[INFO] Processando PDF...`);
             const arrayBuffer = await fileData.arrayBuffer();
@@ -177,9 +304,34 @@ export default function DashboardPage() {
               const page = await pdf.getPage(i);
               const textContent = await page.getTextContent();
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const pageText = textContent.items.map((item: any) => item.str || "").join(" ");
-              extractedText += " " + pageText;
-              addLog(`[INFO] Texto página ${i}: ${pageText.substring(0, 100)}...`);
+              const items = textContent.items as any[];
+
+              // Smart text joining: group by Y position (lines), then sort by X
+              const lines: { y: number; items: { x: number; str: string }[] }[] = [];
+              for (const item of items) {
+                if (!item.str) continue;
+                const y = Math.round(item.transform?.[5] || 0);
+                const x = item.transform?.[4] || 0;
+                let line = lines.find((l) => Math.abs(l.y - y) < 5);
+                if (!line) {
+                  line = { y, items: [] };
+                  lines.push(line);
+                }
+                line.items.push({ x, str: item.str });
+              }
+              // Sort lines top-to-bottom, items left-to-right
+              lines.sort((a, b) => b.y - a.y);
+              const pageText = lines
+                .map((l) => l.items.sort((a, b) => a.x - b.x).map((it) => it.str).join(" "))
+                .join("\n");
+
+              extractedText += "\n" + pageText;
+
+              // Also keep a version with all items joined without separator (catches split digits)
+              const rawJoin = items.map((it: { str?: string }) => it.str || "").join("");
+              extractedText += "\n" + rawJoin;
+
+              addLog(`[INFO] Texto página ${i}: ${pageText.substring(0, 120)}...`);
             }
 
             // Check if we found CPF in the digital text
@@ -188,7 +340,7 @@ export default function DashboardPage() {
             } else {
               // Step 2: Fallback to OCR if no CPF found in text
               addLog(`[INFO] Texto digital não contém CPF. Usando OCR...`);
-              extractedText = "";
+              const ocrTexts: string[] = [];
               for (let i = 1; i <= numPages; i++) {
                 const page = await pdf.getPage(i);
                 const viewport = page.getViewport({ scale: 3.0 }); // Higher res for better OCR
@@ -199,13 +351,26 @@ export default function DashboardPage() {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 await page.render({ canvasContext: ctx, viewport } as any).promise;
 
+                // Apply grayscale + binarization for cleaner OCR
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const px = imageData.data;
+                for (let p = 0; p < px.length; p += 4) {
+                  const gray = px[p] * 0.299 + px[p+1] * 0.587 + px[p+2] * 0.114;
+                  const val = gray > 140 ? 255 : 0;
+                  px[p] = val; px[p+1] = val; px[p+2] = val;
+                }
+                ctx.putImageData(imageData, 0, 0);
+
                 const imageUrl = canvas.toDataURL("image/png");
                 const { data: ocrData } = await Tesseract.recognize(imageUrl, "por");
-                extractedText += " " + ocrData.text;
+                ocrTexts.push(ocrData.text);
                 addLog(`[INFO] OCR página ${i}/${numPages} concluído`);
 
-                if (extractCPF(extractedText)) break;
+                // Check if CPF found so far in OCR results
+                if (extractCPF(ocrTexts.join("\n"))) break;
               }
+              // Append OCR text to extracted text (keep digital text too)
+              extractedText += "\n" + ocrTexts.join("\n");
             }
           }
 
