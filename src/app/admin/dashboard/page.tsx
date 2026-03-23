@@ -126,17 +126,9 @@ function extractCPF(text: string): string | null {
     }
   }
 
-  // Step 4: Last resort - find ANY 11-digit sequence that passes checksum
-  // even without OCR fixes, scanning all digit groups
-  const allDigitRuns = text.replace(/[^0-9]/g, " ").split(/\s+/).filter(Boolean);
-  // Also try sliding window over long digit runs
-  const longRun = text.replace(/[^0-9]/g, "");
-  for (let i = 0; i <= longRun.length - 11; i++) {
-    const candidate = longRun.substring(i, i + 11);
-    if (isValidCPFChecksum(candidate)) {
-      return candidate;
-    }
-  }
+  // Step 4 (removed): Sliding window was too aggressive - it would concatenate
+  // unrelated digit sequences (barcodes, registration numbers, etc.) and find
+  // false CPF matches. Better to send to manual review than extract wrong CPF.
 
   return null;
 }
