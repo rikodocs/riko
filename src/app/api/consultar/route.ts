@@ -55,22 +55,30 @@ export async function POST(request: Request) {
         // Check if this person already exists (duplicate detection)
         const { data: existingPerson } = await supabase
           .from("people")
-          .select("id, name")
+          .select("id, name, used")
           .eq("cpf", cpf)
           .single();
 
         if (existingPerson) {
+          const isUsed = existingPerson.used === true;
+          // If person was already used, new doc goes straight to "used" status
+          // If person exists but not used yet, new doc goes as "consulted" (just links)
+          const docStatus = isUsed ? "used" : "consulted";
+
+          const statusLabel = isUsed ? "JÁ USADO" : "DUPLICADO";
           log.push(
-            `[DUPLICADO] CPF ${formatCPF(cpf)} já cadastrado: ${existingPerson.name || "sem nome"}`
+            `[${statusLabel}] CPF ${formatCPF(cpf)} já cadastrado: ${existingPerson.name || "sem nome"}${isUsed ? " (pessoa já foi usada)" : ""}`
           );
           notifications.push(
-            `Documento duplicado! CPF ${formatCPF(cpf)} (${existingPerson.name || "sem nome"}) já existe no sistema.`
+            isUsed
+              ? `CPF ${formatCPF(cpf)} (${existingPerson.name || "sem nome"}) já foi usado anteriormente. Documento vinculado como usado.`
+              : `CPF ${formatCPF(cpf)} (${existingPerson.name || "sem nome"}) já existe. Documento vinculado à pessoa existente.`
           );
 
           await supabase
             .from("documents")
             .update({
-              status: "duplicate",
+              status: docStatus,
               cpf_extracted: cpf,
               person_id: existingPerson.id,
             })
