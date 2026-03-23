@@ -50,15 +50,13 @@ export default function ImportsPage() {
     try {
       for (const file of validFiles) {
         // Check duplicate by original file name (project-based unique names)
-        const { data: existingDoc } = await supabase
+        // Also check in people table via documents for CPF-level duplicates
+        const { count: nameCount } = await supabase
           .from("documents")
-          .select("id, status")
-          .eq("file_name", file.name)
-          .not("status", "in", '("error")')
-          .limit(1)
-          .maybeSingle();
+          .select("id", { count: "exact", head: true })
+          .eq("file_name", file.name);
 
-        if (existingDoc) {
+        if (nameCount && nameCount > 0) {
           skippedDuplicates.push(file.name);
           continue;
         }
