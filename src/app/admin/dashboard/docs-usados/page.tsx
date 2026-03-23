@@ -15,7 +15,7 @@ export default function DocsUsadosPage() {
     setLoading(true);
     const { data } = await supabase
       .from("people")
-      .select("*")
+      .select("*, documents(id, file_name, file_url, file_path, file_type)")
       .eq("used", true)
       .order("created_at", { ascending: false });
     if (data) setPeople(data);
