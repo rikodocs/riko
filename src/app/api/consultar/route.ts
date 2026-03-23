@@ -94,23 +94,85 @@ export async function POST(request: Request) {
 
         const apiData = await apiRes.json();
         log.push(`[OK] Dados recebidos da API para CPF ${formatCPF(cpf)}`);
+        log.push(`[INFO] Campos da API: ${Object.keys(apiData).join(", ")}`);
 
-        // Extract relevant fields from the API response
+        // Deep search helper: finds a value by trying multiple keys at any depth
+        function findValue(obj: Record<string, unknown>, keys: string[]): string | null {
+          // First try top-level
+          for (const key of keys) {
+            const val = obj[key];
+            if (val && typeof val === "string" && val.trim()) return val.trim();
+            if (val && typeof val === "number") return String(val);
+          }
+          // Then try nested objects (1 level deep)
+          for (const k of Object.keys(obj)) {
+            const nested = obj[k];
+            if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+              for (const key of keys) {
+                const val = (nested as Record<string, unknown>)[key];
+                if (val && typeof val === "string" && val.trim()) return val.trim();
+                if (val && typeof val === "number") return String(val);
+              }
+            }
+          }
+          // Try arrays of objects (e.g., telefones: [{numero: "..."}])
+          for (const key of keys) {
+            const arr = obj[key + "s"] || obj[key];
+            if (Array.isArray(arr) && arr.length > 0 && typeof arr[0] === "object") {
+              const first = arr[0] as Record<string, unknown>;
+              const innerVal = first.numero || first.valor || first.email || first.telefone || Object.values(first).find(v => typeof v === "string" && v.trim());
+              if (innerVal && typeof innerVal === "string") return innerVal.trim();
+            }
+            if (Array.isArray(arr) && arr.length > 0 && typeof arr[0] === "string") {
+              return arr[0];
+            }
+          }
+          return null;
+        }
+
+        // Find first phone from telefones array if it exists
+        let phoneValue = findValue(apiData, ["telefone", "TELEFONE", "celular", "phone", "fone"]);
+        if (!phoneValue && Array.isArray(apiData.telefones) && apiData.telefones.length > 0) {
+          const t = apiData.telefones[0];
+          phoneValue = typeof t === "string" ? t : (t?.numero || t?.telefone || t?.fone || null);
+        }
+
+        // Find first email from emails array if it exists
+        let emailValue = findValue(apiData, ["email", "EMAIL", "e_mail"]);
+        if (!emailValue && Array.isArray(apiData.emails) && apiData.emails.length > 0) {
+          const e = apiData.emails[0];
+          emailValue = typeof e === "string" ? e : (e?.email || e?.valor || null);
+        }
+
+        // Build address from parts if needed
+        let addressValue = findValue(apiData, ["endereco", "ENDERECO", "logradouro", "address"]);
+        if (!addressValue) {
+          const parts = [
+            findValue(apiData, ["logradouro", "tipo_logradouro"]),
+            findValue(apiData, ["numero", "num"]),
+            findValue(apiData, ["complemento"]),
+            findValue(apiData, ["bairro"]),
+          ].filter(Boolean);
+          if (parts.length > 0) addressValue = parts.join(", ");
+        }
+
         const personData = {
           cpf,
-          name: apiData.NOME || apiData.nome || apiData.name || null,
-          birth_date: apiData.NASC || apiData.nascimento || apiData.data_nascimento || null,
-          mother_name: apiData.NOME_MAE || apiData.mae || apiData.nome_mae || null,
-          address: apiData.ENDERECO || apiData.endereco || apiData.logradouro || null,
-          city: apiData.CIDADE || apiData.cidade || apiData.municipio || null,
-          state: apiData.UF || apiData.uf || apiData.estado || null,
-          phone: apiData.TELEFONE || apiData.telefone || apiData.celular || null,
-          email: apiData.EMAIL || apiData.email || null,
-          score: apiData.SCORE?.toString() || apiData.score?.toString() || null,
-          income: apiData.RENDA?.toString() || apiData.renda?.toString() || apiData.renda_presumida?.toString() || null,
+          name: findValue(apiData, ["nome", "NOME", "name", "nomeCompleto", "nome_completo"]),
+          birth_date: findValue(apiData, ["nascimento", "NASC", "data_nascimento", "dataNascimento", "birth_date", "dt_nascimento"]),
+          mother_name: findValue(apiData, ["nome_mae", "NOME_MAE", "mae", "nomeMae", "mother", "mother_name"]),
+          address: addressValue,
+          city: findValue(apiData, ["cidade", "CIDADE", "municipio", "city", "localidade"]),
+          state: findValue(apiData, ["uf", "UF", "estado", "state", "sigla_uf"]),
+          phone: phoneValue,
+          email: emailValue,
+          score: findValue(apiData, ["score", "SCORE", "serasa_score", "scoreCredito"]),
+          income: findValue(apiData, ["renda", "RENDA", "renda_presumida", "rendaPresumida", "income", "salario"]),
           raw_data: apiData,
           used: false,
         };
+
+        log.push(`[INFO] Nome: ${personData.name || "N/A"} | Nasc: ${personData.birth_date || "N/A"} | Cidade: ${personData.city || "N/A"}`);
 
         // Insert person
         const { data: newPerson, error: personError } = await supabase
