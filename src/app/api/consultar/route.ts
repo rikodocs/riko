@@ -61,26 +61,19 @@ export async function POST(request: Request) {
 
         if (existingPerson) {
           const isUsed = existingPerson.used === true;
-          // If person was already used, new doc goes straight to "used" status
-          // If person exists but not used yet, new doc goes as "consulted" (just links)
-          const docStatus = isUsed ? "used" : "consulted";
-
-          const statusLabel = isUsed ? "JÁ USADO" : "DUPLICADO";
           log.push(
-            `[${statusLabel}] CPF ${formatCPF(cpf)} já cadastrado: ${existingPerson.name || "sem nome"}${isUsed ? " (pessoa já foi usada)" : ""}`
+            `[DUPLICADO] CPF ${formatCPF(cpf)} já cadastrado: ${existingPerson.name || "sem nome"}${isUsed ? " (já utilizado)" : ""}`
           );
           notifications.push(
-            isUsed
-              ? `CPF ${formatCPF(cpf)} (${existingPerson.name || "sem nome"}) já foi usado anteriormente. Documento vinculado como usado.`
-              : `CPF ${formatCPF(cpf)} (${existingPerson.name || "sem nome"}) já existe. Documento vinculado à pessoa existente.`
+            `CPF ${formatCPF(cpf)} (${existingPerson.name || "sem nome"}) já existe no sistema${isUsed ? " e já foi utilizado" : ""}. Documento descartado.`
           );
 
+          // Just mark as duplicate, don't link to person
           await supabase
             .from("documents")
             .update({
-              status: docStatus,
+              status: "duplicate",
               cpf_extracted: cpf,
-              person_id: existingPerson.id,
             })
             .eq("id", docId);
           continue;
