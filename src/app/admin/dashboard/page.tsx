@@ -129,7 +129,7 @@ export default function DashboardPage() {
             addLog(`[INFO] Processando PDF...`);
             const arrayBuffer = await fileData.arrayBuffer();
             const pdfjsLib = await import("pdfjs-dist");
-            pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+            pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
             const numPages = Math.min(pdf.numPages, 5); // Max 5 pages
