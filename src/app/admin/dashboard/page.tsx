@@ -129,9 +129,15 @@ export default function DashboardPage() {
             addLog(`[INFO] Processando PDF...`);
             const arrayBuffer = await fileData.arrayBuffer();
             const pdfjsLib = await import("pdfjs-dist");
-            pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+            pdfjsLib.GlobalWorkerOptions.workerSrc = "";
 
-            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const pdf = await pdfjsLib.getDocument({
+              data: arrayBuffer,
+              useWorkerFetch: false,
+              isEvalSupported: false,
+              useSystemFonts: true,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            } as any).promise;
             const numPages = Math.min(pdf.numPages, 5); // Max 5 pages
 
             for (let i = 1; i <= numPages; i++) {
