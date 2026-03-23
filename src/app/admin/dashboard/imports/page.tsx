@@ -48,7 +48,13 @@ export default function ImportsPage() {
 
     try {
       for (const file of validFiles) {
-        const fileName = `${Date.now()}_${file.name.replace(/\s+/g, "_")}`;
+        // Sanitize filename: remove accents, special chars, spaces
+        const safeName = file.name
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-zA-Z0-9._-]/g, "_")
+          .replace(/_+/g, "_");
+        const fileName = `${Date.now()}_${safeName}`;
 
         // Upload to Supabase Storage
         const { error: uploadError } = await supabase.storage
