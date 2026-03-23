@@ -96,129 +96,77 @@ export async function POST(request: Request) {
         log.push(`[OK] Dados recebidos da API para CPF ${formatCPF(cpf)}`);
         log.push(`[INFO] Campos da API: ${Object.keys(apiData).join(", ")}`);
 
-        // Deep search helper: finds a value by trying multiple keys at any depth
-        function findValue(obj: Record<string, unknown>, keys: string[]): string | null {
-          // First try top-level
-          for (const key of keys) {
-            const val = obj[key];
-            if (val && typeof val === "string" && val.trim()) return val.trim();
-            if (val && typeof val === "number") return String(val);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const api = apiData as any;
+
+        // Extract from known API structure: DadosBasicos, DadosEconomicos, profissao, etc.
+        const basicos = api.DadosBasicos || {};
+        const economicos = api.DadosEconomicos || {};
+
+        // Extract phones (ALL from telefones array)
+        const phones: string[] = [];
+        if (Array.isArray(api.telefones)) {
+          for (const t of api.telefones) {
+            const num = t?.telefone || t?.numero || t?.fone || t?.celular;
+            if (num && String(num).trim()) phones.push(String(num).trim());
           }
-          // Then try nested objects (1 level deep)
-          for (const k of Object.keys(obj)) {
-            const nested = obj[k];
-            if (nested && typeof nested === "object" && !Array.isArray(nested)) {
-              for (const key of keys) {
-                const val = (nested as Record<string, unknown>)[key];
-                if (val && typeof val === "string" && val.trim()) return val.trim();
-                if (val && typeof val === "number") return String(val);
-              }
-            }
-          }
-          // Try arrays of objects (e.g., telefones: [{numero: "..."}])
-          for (const key of keys) {
-            const arr = obj[key + "s"] || obj[key];
-            if (Array.isArray(arr) && arr.length > 0 && typeof arr[0] === "object") {
-              const first = arr[0] as Record<string, unknown>;
-              const innerVal = first.numero || first.valor || first.email || first.telefone || Object.values(first).find(v => typeof v === "string" && v.trim());
-              if (innerVal && typeof innerVal === "string") return innerVal.trim();
-            }
-            if (Array.isArray(arr) && arr.length > 0 && typeof arr[0] === "string") {
-              return arr[0];
-            }
-          }
-          return null;
         }
 
-        // Helper: extract ALL items from an array field
-        function extractArray(obj: Record<string, unknown>, keys: string[]): string[] {
-          const results: string[] = [];
-          for (const key of keys) {
-            const val = obj[key];
-            if (typeof val === "string" && val.trim()) {
-              results.push(val.trim());
-            }
-            if (Array.isArray(val)) {
-              for (const item of val) {
-                if (typeof item === "string" && item.trim()) {
-                  results.push(item.trim());
-                } else if (item && typeof item === "object") {
-                  const s = item.numero || item.telefone || item.fone || item.celular || item.email || item.valor || null;
-                  if (s && typeof s === "string" && s.trim()) results.push(s.trim());
-                }
-              }
-            }
+        // Extract emails (ALL from emails array)
+        const emails: string[] = [];
+        if (Array.isArray(api.emails)) {
+          for (const e of api.emails) {
+            const val = typeof e === "string" ? e : (e?.email || e?.valor);
+            if (val && String(val).trim()) emails.push(String(val).trim());
           }
-          // Deduplicate
-          return [...new Set(results)];
         }
 
-        // Helper: extract ALL addresses
-        function extractAddresses(obj: Record<string, unknown>): string[] {
-          const results: string[] = [];
-          // Single address string
-          const single = findValue(obj, ["endereco", "ENDERECO", "address"]);
-          if (single) results.push(single);
-
-          // Build from parts at root level
-          const rootParts = [
-            findValue(obj, ["logradouro", "tipo_logradouro"]),
-            findValue(obj, ["numero", "num"]),
-            findValue(obj, ["complemento"]),
-            findValue(obj, ["bairro"]),
-            findValue(obj, ["cidade", "municipio", "localidade"]),
-            findValue(obj, ["uf", "estado"]),
-            findValue(obj, ["cep"]),
-          ].filter(Boolean);
-          if (rootParts.length > 1 && !results.length) results.push(rootParts.join(", "));
-
-          // Array of address objects
-          const addrKeys = ["enderecos", "endereco", "addresses"];
-          for (const key of addrKeys) {
-            const arr = obj[key];
-            if (Array.isArray(arr)) {
-              for (const addr of arr) {
-                if (typeof addr === "string" && addr.trim()) {
-                  results.push(addr.trim());
-                } else if (addr && typeof addr === "object") {
-                  const a = addr as Record<string, unknown>;
-                  const parts = [
-                    a.logradouro || a.endereco || a.rua || "",
-                    a.numero || a.num || "",
-                    a.complemento || "",
-                    a.bairro || "",
-                    a.cidade || a.municipio || a.localidade || "",
-                    a.uf || a.estado || "",
-                    a.cep || "",
-                  ].map(v => typeof v === "string" ? v.trim() : "").filter(Boolean);
-                  if (parts.length > 0) results.push(parts.join(", "));
-                }
-              }
+        // Extract addresses (ALL from enderecos array)
+        const addresses: string[] = [];
+        if (Array.isArray(api.enderecos)) {
+          for (const addr of api.enderecos) {
+            if (typeof addr === "string") {
+              if (addr.trim()) addresses.push(addr.trim());
+            } else if (addr && typeof addr === "object") {
+              const parts = [
+                addr.tipoLogradouro ? `${addr.tipoLogradouro} ${addr.logradouro || ""}`.trim() : (addr.logradouro || ""),
+                addr.logradouroNumero || addr.numero || "",
+                addr.complemento || "",
+                addr.bairro || "",
+                addr.cidade || addr.municipio || "",
+                addr.uf || addr.estado || "",
+                addr.cep || "",
+              ].map((v: string) => typeof v === "string" ? v.trim() : "").filter(Boolean);
+              if (parts.length > 0) addresses.push(parts.join(", "));
             }
           }
-          return [...new Set(results)];
         }
 
-        // Extract phones (ALL)
-        const phones = extractArray(apiData, ["telefone", "TELEFONE", "telefones", "celular", "phone", "fone", "phones"]);
-        // Extract emails (ALL)
-        const emails = extractArray(apiData, ["email", "EMAIL", "emails", "e_mail"]);
-        // Extract addresses (ALL)
-        const addresses = extractAddresses(apiData);
+        // Extract profession from profissao object
+        const profObj = api.profissao || {};
+        const professionRaw = profObj.cboDescricao || profObj.descricao || profObj.cargo || "";
+        const profession = (typeof professionRaw === "string" && professionRaw.trim() && professionRaw !== "Sem descrição.") ? professionRaw.trim() : null;
+
+        // Extract score from DadosEconomicos.score object
+        const scoreObj = economicos.score || {};
+        const scoreVal = scoreObj.scoreCSB || scoreObj.scoreCSBA || economicos.score_credito || "";
+
+        // Extract city/state from first address if not at root
+        const firstAddr = Array.isArray(api.enderecos) && api.enderecos[0] ? api.enderecos[0] : {};
 
         const personData = {
           cpf,
-          name: findValue(apiData, ["nome", "NOME", "name", "nomeCompleto", "nome_completo"]),
-          birth_date: findValue(apiData, ["nascimento", "NASC", "data_nascimento", "dataNascimento", "birth_date", "dt_nascimento"]),
-          mother_name: findValue(apiData, ["nome_mae", "NOME_MAE", "mae", "nomeMae", "mother", "mother_name"]),
-          profession: findValue(apiData, ["profissao", "PROFISSAO", "ocupacao", "cargo", "profession", "atividade", "atividade_principal"]),
-          phones, // JSONB array
-          emails, // JSONB array
-          addresses, // JSONB array
-          city: findValue(apiData, ["cidade", "CIDADE", "municipio", "city", "localidade"]),
-          state: findValue(apiData, ["uf", "UF", "estado", "state", "sigla_uf"]),
-          score: findValue(apiData, ["score", "SCORE", "serasa_score", "scoreCredito"]),
-          income: findValue(apiData, ["renda", "RENDA", "renda_presumida", "rendaPresumida", "income", "salario"]),
+          name: basicos.nome || api.nome || null,
+          birth_date: basicos.dataNascimento || basicos.data_nascimento || api.dataNascimento || null,
+          mother_name: basicos.nomeMae || basicos.nome_mae || api.nomeMae || null,
+          profession,
+          phones,
+          emails,
+          addresses,
+          city: firstAddr.cidade || firstAddr.municipio || basicos.municipioNascimento || null,
+          state: firstAddr.uf || firstAddr.estado || null,
+          score: scoreVal ? String(scoreVal) : null,
+          income: economicos.renda || economicos.renda_presumida || api.renda || null,
           raw_data: apiData,
           used: false,
         };
