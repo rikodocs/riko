@@ -81,12 +81,16 @@ export default function DashboardPage() {
   async function loadStats() {
     const { data: docs } = await supabase.from("documents").select("status");
     if (docs) {
+      const pending = docs.filter((d) => d.status === "pending").length;
+      const consulted = docs.filter((d) => d.status === "consulted").length;
+      const used = docs.filter((d) => d.status === "used").length;
+      const manual_review = docs.filter((d) => d.status === "manual_review").length;
       setStats({
-        pending: docs.filter((d) => d.status === "pending").length,
-        consulted: docs.filter((d) => d.status === "consulted").length,
-        used: docs.filter((d) => d.status === "used").length,
-        manual_review: docs.filter((d) => d.status === "manual_review").length,
-        total: docs.length,
+        pending,
+        consulted,
+        used,
+        manual_review,
+        total: pending + consulted + used + manual_review,
       });
     }
   }
