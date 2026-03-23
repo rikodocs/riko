@@ -24,6 +24,7 @@ export default function ImportsPage() {
     const { data } = await supabase
       .from("documents")
       .select("id, file_name, status, created_at")
+      .in("status", ["pending", "consulted", "used", "manual_review"])
       .order("created_at", { ascending: false })
       .limit(20);
     if (data) setRecentDocs(data);
