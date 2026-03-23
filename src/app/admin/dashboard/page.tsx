@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import Tesseract from "tesseract.js";
 
 interface Stats {
   pending: number;
@@ -10,15 +11,51 @@ interface Stats {
   total: number;
 }
 
+interface PendingDoc {
+  id: string;
+  file_name: string;
+  file_url: string;
+  file_path: string;
+  file_type: string;
+}
+
+// Extract CPF from text
+function extractCPF(text: string): string | null {
+  const patterns = [
+    /\d{3}\.\d{3}\.\d{3}-\d{2}/,
+    /\d{11}/,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const cpf = match[0].replace(/\D/g, "");
+      if (cpf.length === 11 && !/^(\d)\1{10}$/.test(cpf)) {
+        return cpf;
+      }
+    }
+  }
+  return null;
+}
+
+function formatCPF(cpf: string): string {
+  return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+}
+
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats>({ pending: 0, consulted: 0, used: 0, total: 0 });
   const [consulting, setConsulting] = useState(false);
   const [consultLog, setConsultLog] = useState<string[]>([]);
   const [notifications, setNotifications] = useState<string[]>([]);
+  const logRef = useRef<string[]>([]);
 
   useEffect(() => {
     loadStats();
   }, []);
+
+  const addLog = (msg: string) => {
+    logRef.current = [...logRef.current, msg];
+    setConsultLog([...logRef.current]);
+  };
 
   async function loadStats() {
     const { data: docs } = await supabase.from("documents").select("status");
@@ -34,26 +71,140 @@ export default function DashboardPage() {
 
   async function handleConsultar() {
     setConsulting(true);
+    logRef.current = [];
     setConsultLog([]);
     setNotifications([]);
 
     try {
-      const res = await fetch("/api/consultar", { method: "POST" });
-      const data = await res.json();
+      // 1. Get pending documents
+      const { data: pendingDocs, error: docsError } = await supabase
+        .from("documents")
+        .select("id, file_name, file_url, file_path, file_type")
+        .eq("status", "pending")
+        .order("created_at", { ascending: true });
 
-      if (!res.ok) {
-        setConsultLog([`Erro: ${data.error}`]);
+      if (docsError) {
+        addLog(`[ERRO] Falha ao buscar documentos: ${docsError.message}`);
         setConsulting(false);
         return;
       }
 
-      setConsultLog(data.log || []);
-      if (data.notifications?.length > 0) {
-        setNotifications(data.notifications);
+      if (!pendingDocs || pendingDocs.length === 0) {
+        addLog("[INFO] Nenhum documento pendente encontrado.");
+        setConsulting(false);
+        return;
       }
+
+      addLog(`[INFO] Processando ${pendingDocs.length} documento(s) pendente(s)...`);
+
+      // 2. OCR each document in the browser
+      const extracted: { docId: string; cpf: string }[] = [];
+
+      for (const doc of pendingDocs as PendingDoc[]) {
+        addLog(`[INFO] Lendo documento: ${doc.file_name}`);
+
+        try {
+          // Download from Supabase Storage
+          const { data: fileData, error: dlError } = await supabase.storage
+            .from("documents")
+            .download(doc.file_path);
+
+          if (dlError || !fileData) {
+            addLog(`[ERRO] Falha ao baixar: ${doc.file_name} - ${dlError?.message || "sem dados"}`);
+            continue;
+          }
+
+          let extractedText = "";
+
+          if (doc.file_type?.startsWith("image/")) {
+            // OCR on image - runs in the browser
+            addLog(`[INFO] Executando OCR na imagem...`);
+            const imageUrl = URL.createObjectURL(fileData);
+            const { data: ocrData } = await Tesseract.recognize(imageUrl, "por");
+            extractedText = ocrData.text;
+            URL.revokeObjectURL(imageUrl);
+            addLog(`[INFO] OCR concluído: ${doc.file_name}`);
+          } else if (doc.file_type === "application/pdf") {
+            // For PDF: convert to image first using canvas, then OCR
+            addLog(`[INFO] Processando PDF...`);
+            const arrayBuffer = await fileData.arrayBuffer();
+            const pdfjsLib = await import("pdfjs-dist");
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const numPages = Math.min(pdf.numPages, 5); // Max 5 pages
+
+            for (let i = 1; i <= numPages; i++) {
+              const page = await pdf.getPage(i);
+              const viewport = page.getViewport({ scale: 2.0 });
+              const canvas = document.createElement("canvas");
+              canvas.width = viewport.width;
+              canvas.height = viewport.height;
+              const ctx = canvas.getContext("2d")!;
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              await page.render({ canvasContext: ctx, viewport } as any).promise;
+
+              const imageUrl = canvas.toDataURL("image/png");
+              const { data: ocrData } = await Tesseract.recognize(imageUrl, "por");
+              extractedText += " " + ocrData.text;
+
+              addLog(`[INFO] OCR página ${i}/${numPages} concluído`);
+
+              // Stop if we found a CPF
+              if (extractCPF(extractedText)) break;
+            }
+          }
+
+          // Try to extract CPF
+          const cpf = extractCPF(extractedText);
+
+          if (cpf) {
+            addLog(`[OK] CPF encontrado: ${formatCPF(cpf)} em ${doc.file_name}`);
+            extracted.push({ docId: doc.id, cpf });
+          } else {
+            addLog(`[ERRO] CPF não encontrado em: ${doc.file_name}`);
+            // Mark as error
+            await supabase
+              .from("documents")
+              .update({ status: "error", extracted_text: extractedText.substring(0, 500) })
+              .eq("id", doc.id);
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          addLog(`[ERRO] Falha no OCR de ${doc.file_name}: ${msg}`);
+        }
+      }
+
+      // 3. Send extracted CPFs to server for API consultation
+      if (extracted.length > 0) {
+        addLog(`\n[INFO] Enviando ${extracted.length} CPF(s) para consulta na API...`);
+
+        const res = await fetch("/api/consultar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ documents: extracted }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          addLog(`[ERRO] ${data.error}`);
+        } else {
+          if (data.log) {
+            data.log.forEach((line: string) => addLog(line));
+          }
+          if (data.notifications?.length > 0) {
+            setNotifications(data.notifications);
+          }
+        }
+      } else {
+        addLog("[AVISO] Nenhum CPF foi extraído dos documentos.");
+      }
+
       await loadStats();
-    } catch {
-      setConsultLog(["Erro ao conectar com o servidor."]);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addLog(`[ERRO] Erro inesperado: ${msg}`);
     }
 
     setConsulting(false);
@@ -131,7 +282,7 @@ export default function DashboardPage() {
 
         {/* Console Log */}
         {consultLog.length > 0 && (
-          <div className="bg-black/50 rounded-lg p-4 max-h-64 overflow-y-auto font-mono text-xs space-y-1">
+          <div className="bg-black/50 rounded-lg p-4 max-h-80 overflow-y-auto font-mono text-xs space-y-1">
             {consultLog.map((line, i) => (
               <div
                 key={i}

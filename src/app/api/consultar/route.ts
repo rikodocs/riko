@@ -1,46 +1,32 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
-import Tesseract from "tesseract.js";
-
-// Extract CPF from text using regex
-function extractCPF(text: string): string | null {
-  // Match CPF patterns: 000.000.000-00 or 00000000000
-  const patterns = [
-    /\d{3}\.\d{3}\.\d{3}-\d{2}/,
-    /\d{11}/,
-  ];
-
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match) {
-      // Clean to only digits
-      const cpf = match[0].replace(/\D/g, "");
-      // Basic CPF validation (11 digits, not all same)
-      if (cpf.length === 11 && !/^(\d)\1{10}$/.test(cpf)) {
-        return cpf;
-      }
-    }
-  }
-  return null;
-}
 
 // Format CPF for display
 function formatCPF(cpf: string): string {
   return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 }
 
-export async function POST() {
-  const supabase = createServerClient();
+// Receives a list of {docId, cpf} pairs from the client (OCR done client-side)
+export async function POST(request: Request) {
   const log: string[] = [];
   const notifications: string[] = [];
 
   try {
+    const supabase = createServerClient();
+
     // Get API settings
-    const { data: settings } = await supabase
+    const { data: settings, error: settingsError } = await supabase
       .from("settings")
       .select("*")
       .eq("id", 1)
       .single();
+
+    if (settingsError) {
+      return NextResponse.json(
+        { error: `Erro ao ler configurações: ${settingsError.message}` },
+        { status: 400 }
+      );
+    }
 
     if (!settings?.api_url || !settings?.api_token) {
       return NextResponse.json(
@@ -49,78 +35,22 @@ export async function POST() {
       );
     }
 
-    // Get pending documents
-    const { data: pendingDocs } = await supabase
-      .from("documents")
-      .select("*")
-      .eq("status", "pending")
-      .order("created_at", { ascending: true });
+    // Get the documents with extracted CPFs from client
+    const body = await request.json();
+    const documents: { docId: string; cpf: string }[] = body.documents || [];
 
-    if (!pendingDocs || pendingDocs.length === 0) {
+    if (documents.length === 0) {
       return NextResponse.json(
-        { error: "Nenhum documento pendente encontrado." },
+        { error: "Nenhum documento com CPF extraído para consultar." },
         { status: 400 }
       );
     }
 
-    log.push(`[INFO] Processando ${pendingDocs.length} documento(s) pendente(s)...`);
+    log.push(`[INFO] Consultando ${documents.length} documento(s)...`);
 
-    for (const doc of pendingDocs) {
-      log.push(`\n[INFO] Processando: ${doc.file_name}`);
-
+    for (const { docId, cpf } of documents) {
       try {
-        let extractedText = "";
-
-        // Download the file from Supabase storage
-        const { data: fileData, error: downloadError } = await supabase.storage
-          .from("documents")
-          .download(doc.file_path);
-
-        if (downloadError || !fileData) {
-          log.push(`[ERRO] Falha ao baixar arquivo: ${doc.file_name}`);
-          continue;
-        }
-
-        // For images, use Tesseract OCR
-        if (doc.file_type?.startsWith("image/")) {
-          const buffer = Buffer.from(await fileData.arrayBuffer());
-          const { data: ocrData } = await Tesseract.recognize(buffer, "por", {
-            logger: () => {},
-          });
-          extractedText = ocrData.text;
-          log.push(`[INFO] OCR concluído para imagem: ${doc.file_name}`);
-        }
-        // For PDFs, try to extract text
-        else if (doc.file_type === "application/pdf") {
-          // Convert PDF to image using canvas approach or extract text
-          // For now we use Tesseract on the PDF buffer directly
-          const buffer = Buffer.from(await fileData.arrayBuffer());
-          try {
-            const { data: ocrData } = await Tesseract.recognize(buffer, "por", {
-              logger: () => {},
-            });
-            extractedText = ocrData.text;
-            log.push(`[INFO] OCR concluído para PDF: ${doc.file_name}`);
-          } catch {
-            log.push(`[ERRO] Falha no OCR do PDF: ${doc.file_name}`);
-            continue;
-          }
-        }
-
-        // Extract CPF
-        const cpf = extractCPF(extractedText);
-
-        if (!cpf) {
-          log.push(`[ERRO] CPF não encontrado em: ${doc.file_name}`);
-          // Mark as error so we don't retry indefinitely
-          await supabase
-            .from("documents")
-            .update({ status: "error", extracted_text: extractedText.substring(0, 500) })
-            .eq("id", doc.id);
-          continue;
-        }
-
-        log.push(`[INFO] CPF encontrado: ${formatCPF(cpf)}`);
+        log.push(`[INFO] Processando CPF: ${formatCPF(cpf)}`);
 
         // Check if this person already exists (duplicate detection)
         const { data: existingPerson } = await supabase
@@ -134,10 +64,9 @@ export async function POST() {
             `[DUPLICADO] CPF ${formatCPF(cpf)} já cadastrado: ${existingPerson.name || "sem nome"}`
           );
           notifications.push(
-            `Documento duplicado detectado! CPF ${formatCPF(cpf)} (${existingPerson.name || "sem nome"}) já existe no sistema. Arquivo: ${doc.file_name}`
+            `Documento duplicado! CPF ${formatCPF(cpf)} (${existingPerson.name || "sem nome"}) já existe no sistema.`
           );
 
-          // Link document to existing person, mark as duplicate
           await supabase
             .from("documents")
             .update({
@@ -145,7 +74,7 @@ export async function POST() {
               cpf_extracted: cpf,
               person_id: existingPerson.id,
             })
-            .eq("id", doc.id);
+            .eq("id", docId);
           continue;
         }
 
@@ -167,31 +96,18 @@ export async function POST() {
         log.push(`[OK] Dados recebidos da API para CPF ${formatCPF(cpf)}`);
 
         // Extract relevant fields from the API response
-        // The API structure may vary, so we store raw_data and try to extract common fields
         const personData = {
           cpf,
           name: apiData.NOME || apiData.nome || apiData.name || null,
-          birth_date:
-            apiData.NASC || apiData.nascimento || apiData.data_nascimento || null,
-          mother_name:
-            apiData.NOME_MAE || apiData.mae || apiData.nome_mae || null,
-          address:
-            apiData.ENDERECO ||
-            apiData.endereco ||
-            apiData.logradouro ||
-            null,
+          birth_date: apiData.NASC || apiData.nascimento || apiData.data_nascimento || null,
+          mother_name: apiData.NOME_MAE || apiData.mae || apiData.nome_mae || null,
+          address: apiData.ENDERECO || apiData.endereco || apiData.logradouro || null,
           city: apiData.CIDADE || apiData.cidade || apiData.municipio || null,
           state: apiData.UF || apiData.uf || apiData.estado || null,
-          phone:
-            apiData.TELEFONE || apiData.telefone || apiData.celular || null,
+          phone: apiData.TELEFONE || apiData.telefone || apiData.celular || null,
           email: apiData.EMAIL || apiData.email || null,
-          score:
-            apiData.SCORE?.toString() || apiData.score?.toString() || null,
-          income:
-            apiData.RENDA?.toString() ||
-            apiData.renda?.toString() ||
-            apiData.renda_presumida?.toString() ||
-            null,
+          score: apiData.SCORE?.toString() || apiData.score?.toString() || null,
+          income: apiData.RENDA?.toString() || apiData.renda?.toString() || apiData.renda_presumida?.toString() || null,
           raw_data: apiData,
           used: false,
         };
@@ -216,19 +132,18 @@ export async function POST() {
             cpf_extracted: cpf,
             person_id: newPerson.id,
           })
-          .eq("id", doc.id);
+          .eq("id", docId);
 
         log.push(
           `[OK] ${personData.name || "Pessoa"} (CPF: ${formatCPF(cpf)}) registrado com sucesso!`
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : "Erro desconhecido";
-        log.push(`[ERRO] Falha ao processar ${doc.file_name}: ${message}`);
+        log.push(`[ERRO] Falha ao processar CPF ${formatCPF(cpf)}: ${message}`);
       }
     }
 
     log.push(`\n[INFO] Processamento concluído.`);
-
     return NextResponse.json({ log, notifications });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Erro interno";
