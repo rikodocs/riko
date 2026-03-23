@@ -45,8 +45,24 @@ export default function ImportsPage() {
     let successCount = 0;
     const errors: string[] = [];
 
+    const skippedDuplicates: string[] = [];
+
     try {
       for (const file of validFiles) {
+        // Check duplicate by original file name (project-based unique names)
+        const { data: existingDoc } = await supabase
+          .from("documents")
+          .select("id, status")
+          .eq("file_name", file.name)
+          .not("status", "in", '("error")')
+          .limit(1)
+          .maybeSingle();
+
+        if (existingDoc) {
+          skippedDuplicates.push(file.name);
+          continue;
+        }
+
         const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
         const baseName = file.name
           .replace(/\.[^.]+$/, "")
@@ -91,12 +107,15 @@ export default function ImportsPage() {
     }
 
     setUploading(false);
-    if (successCount > 0) {
+    if (successCount > 0 || skippedDuplicates.length > 0) {
+      const parts: string[] = [];
+      if (successCount > 0) parts.push(`${successCount} documento(s) importado(s) com sucesso!`);
+      if (skippedDuplicates.length > 0) parts.push(`${skippedDuplicates.length} ignorado(s) por nome duplicado.`);
       setMessage({
-        type: "success",
-        text: `${successCount} documento(s) importado(s) com sucesso!`,
+        type: successCount > 0 ? "success" : "error",
+        text: parts.join(" "),
       });
-      loadRecentDocs();
+      if (successCount > 0) loadRecentDocs();
     } else {
       setMessage({
         type: "error",
