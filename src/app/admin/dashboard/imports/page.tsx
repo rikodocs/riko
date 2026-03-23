@@ -122,6 +122,7 @@ export default function ImportsPage() {
       used: { cls: "badge-success", label: "Usado" },
       error: { cls: "badge-danger", label: "Erro" },
       duplicate: { cls: "badge-danger", label: "Duplicado" },
+      manual_review: { cls: "badge-danger", label: "Revisão Manual" },
     };
     const c = config[status] || { cls: "", label: status };
     return <span className={`badge ${c.cls}`}>{c.label}</span>;

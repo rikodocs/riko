@@ -8,6 +8,7 @@ interface Stats {
   pending: number;
   consulted: number;
   used: number;
+  manual_review: number;
   total: number;
 }
 
@@ -62,7 +63,7 @@ function formatCPF(cpf: string): string {
 }
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<Stats>({ pending: 0, consulted: 0, used: 0, total: 0 });
+  const [stats, setStats] = useState<Stats>({ pending: 0, consulted: 0, used: 0, manual_review: 0, total: 0 });
   const [consulting, setConsulting] = useState(false);
   const [consultLog, setConsultLog] = useState<string[]>([]);
   const [notifications, setNotifications] = useState<string[]>([]);
@@ -84,6 +85,7 @@ export default function DashboardPage() {
         pending: docs.filter((d) => d.status === "pending").length,
         consulted: docs.filter((d) => d.status === "consulted").length,
         used: docs.filter((d) => d.status === "used").length,
+        manual_review: docs.filter((d) => d.status === "manual_review").length,
         total: docs.length,
       });
     }
@@ -210,11 +212,11 @@ export default function DashboardPage() {
             addLog(`[OK] CPF encontrado: ${formatCPF(cpf)} em ${doc.file_name}`);
             extracted.push({ docId: doc.id, cpf });
           } else {
-            addLog(`[ERRO] CPF não encontrado em: ${doc.file_name}`);
-            // Mark as error
+            addLog(`[AVISO] CPF não encontrado em: ${doc.file_name} → Enviado para revisão manual`);
+            // Mark as manual_review so user can manually input CPF
             await supabase
               .from("documents")
-              .update({ status: "error", extracted_text: extractedText.substring(0, 500) })
+              .update({ status: "manual_review", extracted_text: extractedText.substring(0, 500) })
               .eq("id", doc.id);
           }
         } catch (err) {
@@ -260,6 +262,7 @@ export default function DashboardPage() {
 
   const statCards = [
     { label: "Pendentes", value: stats.pending, color: "text-warning", bg: "bg-warning-muted" },
+    { label: "Revisão Manual", value: stats.manual_review, color: "text-danger", bg: "bg-danger-muted" },
     { label: "Consultados", value: stats.consulted, color: "text-primary", bg: "bg-primary-muted" },
     { label: "Usados", value: stats.used, color: "text-success", bg: "bg-success-muted" },
     { label: "Total", value: stats.total, color: "text-text-primary", bg: "bg-glass" },
@@ -268,7 +271,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Stats Grid - Bento style */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {statCards.map((card, i) => (
           <div
             key={card.label}
