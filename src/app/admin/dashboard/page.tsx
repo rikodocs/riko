@@ -129,7 +129,13 @@ export default function DashboardPage() {
             addLog(`[INFO] Processando PDF...`);
             const arrayBuffer = await fileData.arrayBuffer();
             const pdfjsLib = await import("pdfjs-dist");
-            pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+            if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+              const workerBlob = new Blob(
+                [await (await fetch("/pdf.worker.min.mjs")).text()],
+                { type: "application/javascript" }
+              );
+              pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
+            }
 
             const pdf = await pdfjsLib.getDocument({
               data: arrayBuffer,
