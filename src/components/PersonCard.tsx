@@ -209,19 +209,27 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
                         )}
                       </div>
                       {/* Download bar */}
-                      <a
-                        href={doc.file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download={downloadName}
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-2 px-3 py-2.5 text-[11px] text-primary hover:bg-glass-hover transition-colors border-t border-surface-border"
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const res = await fetch(doc.file_url);
+                          const blob = await res.blob();
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = downloadName;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+                        }}
+                        className="flex items-center gap-2 px-3 py-2.5 text-[11px] text-primary hover:bg-glass-hover transition-colors border-t border-surface-border w-full text-left"
                       >
                         <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
                         </svg>
                         <span className="truncate font-medium">{downloadName}</span>
-                      </a>
+                      </button>
                     </div>
                   );
                 })}
