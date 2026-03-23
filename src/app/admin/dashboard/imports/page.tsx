@@ -55,6 +55,7 @@ export default function ImportsPage() {
 
       if (uploadError) {
         console.error("Upload error:", uploadError);
+        setMessage({ type: "error", text: `Erro no upload: ${uploadError.message}` });
         continue;
       }
 
@@ -72,7 +73,12 @@ export default function ImportsPage() {
         status: "pending",
       });
 
-      if (!insertError) successCount++;
+      if (insertError) {
+        console.error("Insert error:", insertError);
+        setMessage({ type: "error", text: `Erro no banco: ${insertError.message}` });
+      } else {
+        successCount++;
+      }
     }
 
     setUploading(false);
