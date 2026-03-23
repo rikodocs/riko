@@ -130,42 +130,93 @@ export async function POST(request: Request) {
           return null;
         }
 
-        // Find first phone from telefones array if it exists
-        let phoneValue = findValue(apiData, ["telefone", "TELEFONE", "celular", "phone", "fone"]);
-        if (!phoneValue && Array.isArray(apiData.telefones) && apiData.telefones.length > 0) {
-          const t = apiData.telefones[0];
-          phoneValue = typeof t === "string" ? t : (t?.numero || t?.telefone || t?.fone || null);
+        // Helper: extract ALL items from an array field
+        function extractArray(obj: Record<string, unknown>, keys: string[]): string[] {
+          const results: string[] = [];
+          for (const key of keys) {
+            const val = obj[key];
+            if (typeof val === "string" && val.trim()) {
+              results.push(val.trim());
+            }
+            if (Array.isArray(val)) {
+              for (const item of val) {
+                if (typeof item === "string" && item.trim()) {
+                  results.push(item.trim());
+                } else if (item && typeof item === "object") {
+                  const s = item.numero || item.telefone || item.fone || item.celular || item.email || item.valor || null;
+                  if (s && typeof s === "string" && s.trim()) results.push(s.trim());
+                }
+              }
+            }
+          }
+          // Deduplicate
+          return [...new Set(results)];
         }
 
-        // Find first email from emails array if it exists
-        let emailValue = findValue(apiData, ["email", "EMAIL", "e_mail"]);
-        if (!emailValue && Array.isArray(apiData.emails) && apiData.emails.length > 0) {
-          const e = apiData.emails[0];
-          emailValue = typeof e === "string" ? e : (e?.email || e?.valor || null);
-        }
+        // Helper: extract ALL addresses
+        function extractAddresses(obj: Record<string, unknown>): string[] {
+          const results: string[] = [];
+          // Single address string
+          const single = findValue(obj, ["endereco", "ENDERECO", "address"]);
+          if (single) results.push(single);
 
-        // Build address from parts if needed
-        let addressValue = findValue(apiData, ["endereco", "ENDERECO", "logradouro", "address"]);
-        if (!addressValue) {
-          const parts = [
-            findValue(apiData, ["logradouro", "tipo_logradouro"]),
-            findValue(apiData, ["numero", "num"]),
-            findValue(apiData, ["complemento"]),
-            findValue(apiData, ["bairro"]),
+          // Build from parts at root level
+          const rootParts = [
+            findValue(obj, ["logradouro", "tipo_logradouro"]),
+            findValue(obj, ["numero", "num"]),
+            findValue(obj, ["complemento"]),
+            findValue(obj, ["bairro"]),
+            findValue(obj, ["cidade", "municipio", "localidade"]),
+            findValue(obj, ["uf", "estado"]),
+            findValue(obj, ["cep"]),
           ].filter(Boolean);
-          if (parts.length > 0) addressValue = parts.join(", ");
+          if (rootParts.length > 1 && !results.length) results.push(rootParts.join(", "));
+
+          // Array of address objects
+          const addrKeys = ["enderecos", "endereco", "addresses"];
+          for (const key of addrKeys) {
+            const arr = obj[key];
+            if (Array.isArray(arr)) {
+              for (const addr of arr) {
+                if (typeof addr === "string" && addr.trim()) {
+                  results.push(addr.trim());
+                } else if (addr && typeof addr === "object") {
+                  const a = addr as Record<string, unknown>;
+                  const parts = [
+                    a.logradouro || a.endereco || a.rua || "",
+                    a.numero || a.num || "",
+                    a.complemento || "",
+                    a.bairro || "",
+                    a.cidade || a.municipio || a.localidade || "",
+                    a.uf || a.estado || "",
+                    a.cep || "",
+                  ].map(v => typeof v === "string" ? v.trim() : "").filter(Boolean);
+                  if (parts.length > 0) results.push(parts.join(", "));
+                }
+              }
+            }
+          }
+          return [...new Set(results)];
         }
+
+        // Extract phones (ALL)
+        const phones = extractArray(apiData, ["telefone", "TELEFONE", "telefones", "celular", "phone", "fone", "phones"]);
+        // Extract emails (ALL)
+        const emails = extractArray(apiData, ["email", "EMAIL", "emails", "e_mail"]);
+        // Extract addresses (ALL)
+        const addresses = extractAddresses(apiData);
 
         const personData = {
           cpf,
           name: findValue(apiData, ["nome", "NOME", "name", "nomeCompleto", "nome_completo"]),
           birth_date: findValue(apiData, ["nascimento", "NASC", "data_nascimento", "dataNascimento", "birth_date", "dt_nascimento"]),
           mother_name: findValue(apiData, ["nome_mae", "NOME_MAE", "mae", "nomeMae", "mother", "mother_name"]),
-          address: addressValue,
+          profession: findValue(apiData, ["profissao", "PROFISSAO", "ocupacao", "cargo", "profession", "atividade", "atividade_principal"]),
+          phones, // JSONB array
+          emails, // JSONB array
+          addresses, // JSONB array
           city: findValue(apiData, ["cidade", "CIDADE", "municipio", "city", "localidade"]),
           state: findValue(apiData, ["uf", "UF", "estado", "state", "sigla_uf"]),
-          phone: phoneValue,
-          email: emailValue,
           score: findValue(apiData, ["score", "SCORE", "serasa_score", "scoreCredito"]),
           income: findValue(apiData, ["renda", "RENDA", "renda_presumida", "rendaPresumida", "income", "salario"]),
           raw_data: apiData,
