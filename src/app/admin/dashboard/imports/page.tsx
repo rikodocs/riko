@@ -31,9 +31,7 @@ export default function ImportsPage() {
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
     const validFiles = Array.from(files).filter(
-      (f) =>
-        f.type === "application/pdf" ||
-        f.type.startsWith("image/")
+      (f) => f.type === "application/pdf" || f.type.startsWith("image/")
     );
 
     if (validFiles.length === 0) {
@@ -48,7 +46,6 @@ export default function ImportsPage() {
 
     try {
       for (const file of validFiles) {
-        // Sanitize: keep only ASCII letters, numbers, dot, hyphen
         const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
         const baseName = file.name
           .replace(/\.[^.]+$/, "")
@@ -60,23 +57,19 @@ export default function ImportsPage() {
           || "doc";
         const fileName = `${Date.now()}_${baseName}.${ext}`;
 
-        // Upload to Supabase Storage
         const { error: uploadError } = await supabase.storage
           .from("documents")
           .upload(fileName, file);
 
         if (uploadError) {
-          console.error("Upload error:", uploadError);
           errors.push(`Upload "${file.name}": ${uploadError.message}`);
           continue;
         }
 
-        // Get public URL
         const { data: urlData } = supabase.storage
           .from("documents")
           .getPublicUrl(fileName);
 
-        // Insert record
         const { error: insertError } = await supabase.from("documents").insert({
           file_name: file.name,
           file_path: fileName,
@@ -86,7 +79,6 @@ export default function ImportsPage() {
         });
 
         if (insertError) {
-          console.error("Insert error:", insertError);
           errors.push(`Banco "${file.name}": ${insertError.message}`);
         } else {
           successCount++;
@@ -94,7 +86,6 @@ export default function ImportsPage() {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("Unexpected error:", err);
       errors.push(`Erro inesperado: ${msg}`);
     }
 
@@ -106,7 +97,10 @@ export default function ImportsPage() {
       });
       loadRecentDocs();
     } else {
-      setMessage({ type: "error", text: errors.length > 0 ? errors.join(" | ") : "Falha ao importar documentos." });
+      setMessage({
+        type: "error",
+        text: errors.length > 0 ? errors.join(" | ") : "Falha ao importar documentos.",
+      });
     }
   }, []);
 
@@ -122,108 +116,116 @@ export default function ImportsPage() {
   );
 
   const statusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      pending: "bg-warning/10 text-warning border-warning/30",
-      consulted: "bg-cyan-primary/10 text-cyan-primary border-cyan-primary/30",
-      used: "bg-success/10 text-success border-success/30",
+    const config: Record<string, { cls: string; label: string }> = {
+      pending: { cls: "badge-warning", label: "Pendente" },
+      consulted: { cls: "badge-primary", label: "Consultado" },
+      used: { cls: "badge-success", label: "Usado" },
+      error: { cls: "badge-danger", label: "Erro" },
+      duplicate: { cls: "badge-danger", label: "Duplicado" },
     };
-    const labels: Record<string, string> = {
-      pending: "Pendente",
-      consulted: "Consultado",
-      used: "Usado",
-    };
-    return (
-      <span className={`text-xs px-2 py-0.5 rounded-full border ${styles[status] || ""}`}>
-        {labels[status] || status}
-      </span>
-    );
+    const c = config[status] || { cls: "", label: status };
+    return <span className={`badge ${c.cls}`}>{c.label}</span>;
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Upload Area */}
       <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragActive(true);
-        }}
+        onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
         onDragLeave={() => setDragActive(false)}
         onDrop={handleDrop}
-        className={`border-2 border-dashed rounded-xl p-12 text-center transition-all ${
-          dragActive
-            ? "border-cyan-primary bg-cyan-primary/5"
-            : "border-surface-border hover:border-gray-600"
+        className={`glass-static rounded-2xl p-12 text-center transition-all duration-200 ${
+          dragActive ? "border-primary bg-primary-muted !border-primary" : ""
         }`}
       >
-        <svg
-          className="w-12 h-12 mx-auto mb-4 text-gray-500"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-          />
-        </svg>
-        <p className="text-gray-400 mb-2">
-          Arraste e solte documentos aqui
-        </p>
-        <p className="text-gray-600 text-sm mb-4">
-          Aceita imagens (JPG, PNG) e PDFs
-        </p>
-        <label className="inline-block px-6 py-2.5 bg-cyan-primary text-black font-semibold rounded-lg cursor-pointer hover:bg-cyan-dark transition-colors text-sm">
-          {uploading ? "Enviando..." : "Selecionar Arquivos"}
-          <input
-            type="file"
-            multiple
-            accept="image/*,.pdf"
-            className="hidden"
-            onChange={(e) => e.target.files && handleFiles(e.target.files)}
-            disabled={uploading}
-          />
-        </label>
+        <div className="flex flex-col items-center gap-4">
+          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-colors ${
+            dragActive ? "bg-primary-muted" : "bg-glass"
+          }`}>
+            <svg
+              className={`w-6 h-6 ${dragActive ? "text-primary" : "text-text-tertiary"}`}
+              fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-text-secondary text-sm font-medium">
+              Arraste e solte documentos aqui
+            </p>
+            <p className="text-text-tertiary text-xs mt-1">
+              Aceita imagens (JPG, PNG) e PDFs
+            </p>
+          </div>
+          <label className="btn-primary cursor-pointer text-sm">
+            {uploading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
+                Enviando...
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                Selecionar Arquivos
+              </>
+            )}
+            <input
+              type="file"
+              multiple
+              accept="image/*,.pdf"
+              className="hidden"
+              onChange={(e) => e.target.files && handleFiles(e.target.files)}
+              disabled={uploading}
+            />
+          </label>
+        </div>
       </div>
 
       {/* Message */}
       {message && (
         <div
-          className={`px-4 py-3 rounded-lg text-sm ${
+          className={`px-4 py-3 rounded-xl text-xs font-medium animate-fade-in ${
             message.type === "success"
-              ? "bg-success/10 text-success border border-success/30"
-              : "bg-danger/10 text-danger border border-danger/30"
+              ? "bg-success-muted text-success border border-success/20"
+              : "bg-danger-muted text-danger border border-danger/20"
           }`}
         >
           {message.text}
         </div>
       )}
 
-      {/* Recent imports table */}
-      <div className="bg-surface border border-surface-border rounded-xl overflow-hidden">
+      {/* Recent imports */}
+      <div className="glass-static rounded-2xl overflow-hidden">
         <div className="px-5 py-4 border-b border-surface-border">
-          <h2 className="text-sm font-semibold text-white">Importações Recentes</h2>
+          <h2 className="text-[13px] font-semibold text-text-primary"
+              style={{ fontFamily: "var(--font-heading)" }}>
+            Importações Recentes
+          </h2>
         </div>
         {recentDocs.length === 0 ? (
-          <div className="p-8 text-center text-gray-500 text-sm">
-            Nenhum documento importado ainda.
+          <div className="p-10 text-center">
+            <p className="text-text-tertiary text-sm">Nenhum documento importado ainda.</p>
           </div>
         ) : (
           <div className="divide-y divide-surface-border">
-            {recentDocs.map((doc) => (
-              <div key={doc.id} className="px-5 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <span className="text-sm text-gray-300 truncate max-w-xs">
+            {recentDocs.map((doc, i) => (
+              <div key={doc.id} className={`px-5 py-3 flex items-center justify-between hover:bg-glass-hover transition-colors stagger-item`}
+                   style={{ animationDelay: `${i * 30}ms` }}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-glass flex items-center justify-center shrink-0">
+                    <svg className="w-3.5 h-3.5 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <span className="text-[13px] text-text-secondary truncate">
                     {doc.file_name}
                   </span>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3 shrink-0 ml-4">
                   {statusBadge(doc.status)}
-                  <span className="text-xs text-gray-600">
+                  <span className="text-[11px] text-text-disabled font-mono">
                     {new Date(doc.created_at).toLocaleDateString("pt-BR")}
                   </span>
                 </div>

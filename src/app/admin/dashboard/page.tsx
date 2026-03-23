@@ -259,57 +259,63 @@ export default function DashboardPage() {
   }
 
   const statCards = [
-    { label: "Pendentes", value: stats.pending, color: "text-warning" },
-    { label: "Consultados", value: stats.consulted, color: "text-cyan-primary" },
-    { label: "Usados", value: stats.used, color: "text-success" },
-    { label: "Total", value: stats.total, color: "text-white" },
+    { label: "Pendentes", value: stats.pending, color: "text-warning", bg: "bg-warning-muted" },
+    { label: "Consultados", value: stats.consulted, color: "text-primary", bg: "bg-primary-muted" },
+    { label: "Usados", value: stats.used, color: "text-success", bg: "bg-success-muted" },
+    { label: "Total", value: stats.total, color: "text-text-primary", bg: "bg-glass" },
   ];
 
   return (
-    <div className="space-y-6">
-      {/* Stats Grid */}
+    <div className="space-y-6 animate-fade-in">
+      {/* Stats Grid - Bento style */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map((card) => (
+        {statCards.map((card, i) => (
           <div
             key={card.label}
-            className="bg-surface border border-surface-border rounded-xl p-5"
+            className={`glass-static rounded-2xl p-5 stagger-item`}
+            style={{ animationDelay: `${i * 60}ms` }}
           >
-            <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">
+            <p className="text-text-tertiary text-[11px] uppercase tracking-[0.1em] font-medium mb-2"
+               style={{ fontFamily: "var(--font-heading)" }}>
               {card.label}
             </p>
-            <p className={`text-3xl font-bold ${card.color}`}>{card.value}</p>
+            <p className={`text-3xl font-bold tracking-tight ${card.color}`}
+               style={{ fontFamily: "var(--font-heading)" }}>
+              {card.value}
+            </p>
           </div>
         ))}
       </div>
 
-      {/* Consultar Button */}
-      <div className="bg-surface border border-surface-border rounded-xl p-6">
-        <div className="flex items-center justify-between mb-4">
+      {/* Consultar Section */}
+      <div className="glass-static rounded-2xl p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-white">Consultar Documentos</h2>
-            <p className="text-sm text-gray-500">
+            <h2 className="text-[15px] font-semibold text-text-primary"
+                style={{ fontFamily: "var(--font-heading)" }}>
+              Consultar Documentos
+            </h2>
+            <p className="text-text-tertiary text-xs mt-0.5">
               Processa documentos pendentes: extrai CPF via OCR e consulta na API
             </p>
           </div>
           <button
             onClick={handleConsultar}
             disabled={consulting || stats.pending === 0}
-            className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all ${
-              consulting || stats.pending === 0
-                ? "bg-gray-700 text-gray-500 cursor-not-allowed"
-                : "bg-cyan-primary text-black hover:bg-cyan-dark glow-cyan"
-            }`}
+            className="btn-primary whitespace-nowrap"
           >
             {consulting ? (
-              <span className="flex items-center gap-2">
-                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
+              <>
+                <div className="w-4 h-4 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
                 Consultando...
-              </span>
+              </>
             ) : (
-              `Consultar (${stats.pending} pendentes)`
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                Consultar ({stats.pending})
+              </>
             )}
           </button>
         </div>
@@ -320,7 +326,7 @@ export default function DashboardPage() {
             {notifications.map((note, i) => (
               <div
                 key={i}
-                className="bg-warning/10 border border-warning/30 text-warning px-4 py-2 rounded-lg text-sm"
+                className="bg-warning-muted border border-warning/20 text-warning px-4 py-2.5 rounded-xl text-xs font-medium animate-fade-in"
               >
                 {note}
               </div>
@@ -330,19 +336,19 @@ export default function DashboardPage() {
 
         {/* Console Log */}
         {consultLog.length > 0 && (
-          <div className="bg-black/50 rounded-lg p-4 max-h-80 overflow-y-auto font-mono text-xs space-y-1">
+          <div className="bg-surface-0 rounded-xl border border-surface-border p-4 max-h-80 overflow-y-auto font-mono text-[11px] leading-relaxed space-y-0.5">
             {consultLog.map((line, i) => (
               <div
                 key={i}
-                className={
+                className={`${
                   line.startsWith("Erro") || line.startsWith("[ERRO")
                     ? "text-danger"
                     : line.startsWith("[OK")
                     ? "text-success"
                     : line.startsWith("[AVISO") || line.startsWith("[DUPLICADO")
                     ? "text-warning"
-                    : "text-gray-400"
-                }
+                    : "text-text-tertiary"
+                }`}
               >
                 {line}
               </div>

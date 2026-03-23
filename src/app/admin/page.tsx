@@ -11,7 +11,6 @@ export default function AdminLoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // Check if already authenticated
     const auth = sessionStorage.getItem("riko_auth");
     if (auth === "true") {
       router.push("/admin/dashboard");
@@ -21,20 +20,15 @@ export default function AdminLoginPage() {
 
   const handleChange = (index: number, value: string) => {
     if (!/^\d*$/.test(value)) return;
-
     const newPin = [...pin];
     newPin[index] = value.slice(-1);
     setPin(newPin);
     setError(false);
-
     if (value && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
-
-    // Auto-submit when all digits filled
     if (value && index === 5) {
-      const fullPin = newPin.join("");
-      validatePin(fullPin);
+      validatePin(newPin.join(""));
     }
   };
 
@@ -48,15 +42,13 @@ export default function AdminLoginPage() {
     e.preventDefault();
     const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
     if (pasted.length === 6) {
-      const newPin = pasted.split("");
-      setPin(newPin);
+      setPin(pasted.split(""));
       validatePin(pasted);
     }
   };
 
   const validatePin = (fullPin: string) => {
     setLoading(true);
-    // Small delay for visual feedback
     setTimeout(() => {
       if (fullPin === "171033") {
         sessionStorage.setItem("riko_auth", "true");
@@ -67,74 +59,83 @@ export default function AdminLoginPage() {
         inputRefs.current[0]?.focus();
         setLoading(false);
       }
-    }, 500);
+    }, 600);
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center relative overflow-hidden">
-      {/* Background grid */}
-      <div className="absolute inset-0 opacity-5">
-        <div
-          className="w-full h-full"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(0,229,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(0,229,255,0.3) 1px, transparent 1px)",
-            backgroundSize: "50px 50px",
-          }}
-        />
-      </div>
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center relative overflow-hidden noise">
+      {/* Grid background */}
+      <div className="absolute inset-0 grid-bg" />
 
-      <div className="absolute w-64 h-64 rounded-full bg-cyan-primary opacity-10 blur-[100px]" />
+      {/* Gradient orbs */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[400px] h-[400px] rounded-full bg-primary/5 blur-[120px]" />
 
-      <div className="relative z-10 flex flex-col items-center gap-8">
+      <div className="relative z-10 flex flex-col items-center gap-10 animate-fade-in">
         {/* Logo */}
-        <div className="text-5xl font-bold tracking-wider text-white">
-          <span className="text-cyan-primary">R</span>IKO
+        <div className="flex flex-col items-center gap-3">
+          <h1
+            className="text-5xl font-bold tracking-tight"
+            style={{ fontFamily: "var(--font-heading)" }}
+          >
+            <span className="text-primary">R</span>
+            <span className="text-text-primary">IKO</span>
+          </h1>
         </div>
 
-        <div className="text-sm text-gray-500 uppercase tracking-widest">
-          Acesso Restrito
-        </div>
-
-        {/* PIN Input */}
-        <div className="flex gap-3" onPaste={handlePaste}>
-          {pin.map((digit, index) => (
-            <input
-              key={index}
-              ref={(el) => { inputRefs.current[index] = el; }}
-              type="password"
-              inputMode="numeric"
-              maxLength={1}
-              value={digit}
-              onChange={(e) => handleChange(index, e.target.value)}
-              onKeyDown={(e) => handleKeyDown(index, e)}
-              disabled={loading}
-              className={`w-12 h-14 text-center text-xl font-mono rounded-lg bg-surface border-2 transition-all duration-200 pin-input ${
-                error
-                  ? "border-danger text-danger"
-                  : "border-surface-border text-white"
-              } ${loading ? "opacity-50" : ""}`}
-            />
-          ))}
-        </div>
-
-        {error && (
-          <p className="text-danger text-sm animate-pulse">
-            Código inválido. Tente novamente.
-          </p>
-        )}
-
-        {loading && (
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-cyan-primary animate-ping" />
-            <span className="text-gray-400 text-sm">Verificando...</span>
+        {/* Login card */}
+        <div className="glass-static rounded-2xl p-8 flex flex-col items-center gap-6 min-w-[340px]">
+          <div className="flex flex-col items-center gap-1">
+            <p
+              className="text-text-secondary text-xs uppercase tracking-[0.2em] font-medium"
+              style={{ fontFamily: "var(--font-heading)" }}
+            >
+              Acesso Restrito
+            </p>
+            <p className="text-text-tertiary text-xs">
+              Digite o PIN de 6 dígitos
+            </p>
           </div>
-        )}
 
-        <div className="w-48 h-px bg-gradient-to-r from-transparent via-cyan-primary to-transparent opacity-30" />
-        <p className="text-gray-600 text-xs">
-          Digite o PIN de 6 dígitos para acessar
-        </p>
+          {/* PIN Input */}
+          <div className="flex gap-3" onPaste={handlePaste}>
+            {pin.map((digit, index) => (
+              <input
+                key={index}
+                ref={(el) => { inputRefs.current[index] = el; }}
+                type="password"
+                inputMode="numeric"
+                maxLength={1}
+                value={digit}
+                onChange={(e) => handleChange(index, e.target.value)}
+                onKeyDown={(e) => handleKeyDown(index, e)}
+                disabled={loading}
+                aria-label={`Dígito ${index + 1} do PIN`}
+                className={`w-12 h-14 text-center text-xl font-mono rounded-xl bg-surface-1 border transition-all duration-200 pin-input ${
+                  error
+                    ? "border-danger text-danger glow-danger"
+                    : "border-surface-border text-text-primary"
+                } ${loading ? "opacity-40" : ""}`}
+              />
+            ))}
+          </div>
+
+          {/* Feedback */}
+          {error && (
+            <div className="flex items-center gap-2 animate-fade-in">
+              <div className="w-1.5 h-1.5 rounded-full bg-danger" />
+              <p className="text-danger text-xs font-medium">
+                Código inválido
+              </p>
+            </div>
+          )}
+
+          {loading && (
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+              <span className="text-text-tertiary text-xs">Verificando...</span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

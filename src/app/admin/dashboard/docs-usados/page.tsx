@@ -26,9 +26,7 @@ export default function DocsUsadosPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadDocs();
-  }, []);
+  useEffect(() => { loadDocs(); }, []);
 
   async function loadDocs() {
     setLoading(true);
@@ -43,97 +41,90 @@ export default function DocsUsadosPage() {
 
   async function unmarkUsed(personId: string) {
     await supabase.from("people").update({ used: false }).eq("id", personId);
-    await supabase
-      .from("documents")
-      .update({ status: "consulted" })
-      .eq("person_id", personId);
+    await supabase.from("documents").update({ status: "consulted" }).eq("person_id", personId);
     setPeople((prev) => prev.filter((p) => p.id !== personId));
   }
 
   const filtered = people.filter(
-    (p) =>
-      p.name?.toLowerCase().includes(search.toLowerCase()) ||
-      p.cpf?.includes(search)
+    (p) => p.name?.toLowerCase().includes(search.toLowerCase()) || p.cpf?.includes(search)
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       {/* Search */}
       <div className="flex items-center gap-4">
         <div className="relative flex-1 max-w-md">
-          <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          <svg className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-text-disabled" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por nome ou CPF..."
-            className="w-full bg-surface border border-surface-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-cyan-primary"
+            className="input-base w-full pl-10"
           />
         </div>
-        <span className="text-sm text-gray-500">{filtered.length} docs usados</span>
+        <span className="text-[11px] text-text-disabled font-mono">{filtered.length} usados</span>
       </div>
 
       {/* Cards */}
       {loading ? (
-        <div className="text-center py-12 text-gray-500">Carregando...</div>
+        <div className="space-y-3">
+          {[1,2,3].map(i => (
+            <div key={i} className="glass-static rounded-2xl p-5 animate-shimmer h-20" />
+          ))}
+        </div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
-          Nenhum documento usado ainda.
+        <div className="glass-static rounded-2xl p-12 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-glass mx-auto mb-3 flex items-center justify-center">
+            <svg className="w-5 h-5 text-text-disabled" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+          </div>
+          <p className="text-text-tertiary text-sm">Nenhum documento usado ainda.</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((person) => (
-            <div
-              key={person.id}
-              className="bg-surface border border-surface-border rounded-xl overflow-hidden"
-            >
+          {filtered.map((person, i) => (
+            <div key={person.id} className="glass-static rounded-2xl overflow-hidden stagger-item" style={{ animationDelay: `${i * 40}ms` }}>
               <div
-                className="px-5 py-4 flex items-center justify-between cursor-pointer hover:bg-surface-light transition-colors"
-                onClick={() =>
-                  setExpanded(expanded === person.id ? null : person.id)
-                }
+                className="px-5 py-4 flex items-center justify-between cursor-pointer hover:bg-glass-hover transition-colors"
+                onClick={() => setExpanded(expanded === person.id ? null : person.id)}
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center text-success font-bold text-sm">
+                  <div className="w-10 h-10 rounded-xl bg-success-muted flex items-center justify-center text-success font-bold text-sm"
+                       style={{ fontFamily: "var(--font-heading)" }}>
                     {person.name?.[0] || "?"}
                   </div>
                   <div>
-                    <p className="text-white font-medium text-sm">
+                    <p className="text-text-primary font-medium text-[13px]">
                       {person.name || "Nome não disponível"}
                     </p>
-                    <p className="text-gray-500 text-xs font-mono">
+                    <p className="text-text-disabled text-[11px] font-mono">
                       CPF: {person.cpf}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      unmarkUsed(person.id);
-                    }}
-                    className="px-3 py-1.5 bg-warning/10 text-warning border border-warning/30 rounded-lg text-xs font-medium hover:bg-warning/20 transition-colors"
+                    onClick={(e) => { e.stopPropagation(); unmarkUsed(person.id); }}
+                    className="btn-ghost !py-1.5 !px-3 !text-[11px] !rounded-lg text-warning !border-warning/20 hover:!bg-warning-muted"
                   >
                     Desfazer Usado
                   </button>
                   <svg
-                    className={`w-4 h-4 text-gray-500 transition-transform ${
-                      expanded === person.id ? "rotate-180" : ""
-                    }`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                    className={`w-4 h-4 text-text-disabled transition-transform duration-200 ${expanded === person.id ? "rotate-180" : ""}`}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                   </svg>
                 </div>
               </div>
 
               {expanded === person.id && (
-                <div className="px-5 pb-5 border-t border-surface-border pt-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div className="px-5 pb-5 border-t border-surface-border pt-4 animate-fade-in">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[13px]">
                     <InfoRow label="Nome" value={person.name} />
                     <InfoRow label="CPF" value={person.cpf} />
                     <InfoRow label="Data de Nascimento" value={person.birth_date} />
@@ -146,13 +137,12 @@ export default function DocsUsadosPage() {
                     <InfoRow label="Score" value={person.score} />
                     <InfoRow label="Renda" value={person.income} />
                   </div>
-
                   {person.raw_data && (
                     <details className="mt-4">
-                      <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
+                      <summary className="text-[11px] text-text-disabled cursor-pointer hover:text-text-tertiary transition-colors">
                         Dados completos da API
                       </summary>
-                      <pre className="mt-2 bg-black/50 rounded-lg p-3 text-xs text-gray-400 overflow-auto max-h-64 font-mono">
+                      <pre className="mt-2 bg-surface-0 rounded-xl border border-surface-border p-3 text-[10px] text-text-tertiary overflow-auto max-h-64 font-mono">
                         {JSON.stringify(person.raw_data, null, 2)}
                       </pre>
                     </details>
@@ -169,9 +159,9 @@ export default function DocsUsadosPage() {
 
 function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {
   return (
-    <div>
-      <span className="text-gray-500 text-xs">{label}</span>
-      <p className="text-gray-300">{value || "—"}</p>
+    <div className="bg-surface-0 rounded-lg px-3 py-2">
+      <span className="text-text-disabled text-[10px] uppercase tracking-wider font-medium">{label}</span>
+      <p className="text-text-secondary text-[13px]">{value || "—"}</p>
     </div>
   );
 }
