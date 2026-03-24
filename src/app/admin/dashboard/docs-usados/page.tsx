@@ -66,6 +66,7 @@ export default function DocsUsadosPage() {
               actionLabel="Desfazer Usado"
               actionColor="warning"
               onAction={unmarkUsed}
+              onDocumentsChanged={loadDocs}
               index={i}
             />
           ))}

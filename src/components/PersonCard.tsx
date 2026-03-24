@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { supabase } from "@/lib/supabase";
 
 export interface PersonDocument {
   id: string;
@@ -28,6 +29,7 @@ export interface Person {
   address?: string;
   score: string;
   income: string;
+  used?: boolean;
   raw_data: Record<string, unknown>;
   created_at: string;
   documents?: PersonDocument[];
@@ -38,11 +40,15 @@ interface PersonCardProps {
   actionLabel: string;
   actionColor: "success" | "warning";
   onAction: (personId: string) => void;
+  onDocumentsChanged?: () => void;
   index: number;
 }
 
-export default function PersonCard({ person, actionLabel, actionColor, onAction, index }: PersonCardProps) {
+export default function PersonCard({ person, actionLabel, actionColor, onAction, onDocumentsChanged, index }: PersonCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [attaching, setAttaching] = useState(false);
+  const [attachMsg, setAttachMsg] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Merge legacy + new array fields
   const phones = person.phones?.length > 0 ? person.phones : (person.phone ? [person.phone] : []);
@@ -171,10 +177,96 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
           )}
 
           {/* Documentos */}
-          {person.documents && person.documents.length > 0 && (
-            <div className="mt-4">
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-2">
               <span className="text-text-disabled text-[10px] uppercase tracking-wider font-medium">
-                Documentos ({person.documents.length})
+                Documentos ({person.documents?.length || 0})
+              </span>
+              <div className="flex items-center gap-2">
+                {attachMsg && (
+                  <span className={`text-[10px] font-medium ${attachMsg.startsWith("!") ? "text-danger" : "text-success"}`}>
+                    {attachMsg.replace(/^!/, "")}
+                  </span>
+                )}
+                <label className={`btn-ghost !py-1 !px-2.5 !text-[10px] !rounded-lg text-primary !border-primary/20 hover:!bg-primary-muted cursor-pointer flex items-center gap-1.5 ${attaching ? "opacity-50 pointer-events-none" : ""}`}>
+                  {attaching ? (
+                    <div className="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                  ) : (
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                  )}
+                  {attaching ? "Anexando..." : "Anexar Documento"}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept="image/*,.pdf"
+                    className="hidden"
+                    disabled={attaching}
+                    onChange={async (e) => {
+                      const files = e.target.files;
+                      if (!files || files.length === 0) return;
+                      setAttaching(true);
+                      setAttachMsg(null);
+                      let ok = 0;
+                      let errs = 0;
+                      for (const file of Array.from(files)) {
+                        try {
+                          const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
+                          const baseName = file.name
+                            .replace(/\.[^.]+$/, "")
+                            .normalize("NFD")
+                            .replace(/[\u0300-\u036f]/g, "")
+                            .replace(/[^a-zA-Z0-9]/g, "_")
+                            .replace(/_+/g, "_")
+                            .replace(/^_|_$/g, "")
+                            || "doc";
+                          const fileName = `${Date.now()}_${baseName}.${ext}`;
+
+                          const { error: uploadError } = await supabase.storage
+                            .from("documents")
+                            .upload(fileName, file);
+
+                          if (uploadError) { errs++; continue; }
+
+                          const { data: urlData } = supabase.storage
+                            .from("documents")
+                            .getPublicUrl(fileName);
+
+                          const { error: insertError } = await supabase.from("documents").insert({
+                            file_name: file.name,
+                            file_path: fileName,
+                            file_url: urlData.publicUrl,
+                            file_type: file.type,
+                            status: person.used ? "used" : "consulted",
+                            cpf_extracted: person.cpf,
+                            person_id: person.id,
+                          });
+
+                          if (insertError) errs++;
+                          else ok++;
+                        } catch { errs++; }
+                      }
+                      setAttaching(false);
+                      if (ok > 0) {
+                        setAttachMsg(`${ok} anexado(s)!`);
+                        onDocumentsChanged?.();
+                      } else {
+                        setAttachMsg(`!Falha ao anexar`);
+                      }
+                      // Reset input
+                      if (fileInputRef.current) fileInputRef.current.value = "";
+                      setTimeout(() => setAttachMsg(null), 3000);
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+          {person.documents && person.documents.length > 0 && (
+            <>
+              <span className="hidden">
+                {/* count already shown above */}
               </span>
               <div className="flex flex-wrap gap-3 mt-2">
                 {person.documents.map((doc, di) => {
@@ -234,8 +326,9 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
                   );
                 })}
               </div>
-            </div>
+            </>
           )}
+          </div>
 
           {/* Raw data */}
           {person.raw_data && (

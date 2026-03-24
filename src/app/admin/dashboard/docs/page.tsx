@@ -66,6 +66,7 @@ export default function DocsPage() {
               actionLabel="Marcar como Usado"
               actionColor="success"
               onAction={markAsUsed}
+              onDocumentsChanged={loadDocs}
               index={i}
             />
           ))}
