@@ -278,42 +278,39 @@ export default function DashboardPage() {
             addLog(`[INFO] Texto página ${i}: ${pageText.substring(0, 120)}...`);
           }
 
-          // Check if this is a CNH Digital (auto-processable)
-          const isCNH = /CNH|HABILITA|CARTEIRA\s*NACIONAL|SENATRAN|DETRAN/i.test(extractedText);
-
-          if (!isCNH) {
-            // Not a CNH Digital → send to manual review
-            addLog(`[INFO] Documento não é CNH Digital → Enviado para revisão manual`);
-            await supabase
-              .from("documents")
-              .update({ status: "manual_review", extracted_text: extractedText.substring(0, 500) })
-              .eq("id", doc.id);
-            continue;
-          }
-
-          // CNH Digital: try to extract CPF from digital text
+          // Step 1: Try to extract CPF from digital text (works for ANY document type)
           let cpf = extractCPF(extractedText);
 
-          // If not found in digital text, try OCR as fallback
+          if (cpf) {
+            addLog(`[OK] CPF encontrado no texto digital do PDF!`);
+          }
+
+          // Step 2: If not found, check if it's a CNH (worth trying OCR)
           if (!cpf) {
-            addLog(`[INFO] CPF não encontrado no texto digital da CNH. Usando OCR...`);
-            for (let i = 1; i <= numPages; i++) {
-              const page = await pdf.getPage(i);
-              const viewport = page.getViewport({ scale: 3.0 });
-              const canvas = document.createElement("canvas");
-              canvas.width = viewport.width;
-              canvas.height = viewport.height;
-              const ctx = canvas.getContext("2d")!;
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              await page.render({ canvasContext: ctx, viewport } as any).promise;
+            const isCNH = /CNH|HABILITA|CARTEIRA\s*NACIONAL|SENATRAN|DETRAN/i.test(extractedText);
 
-              const imageUrl = canvas.toDataURL("image/png");
-              const { data: ocrData } = await Tesseract.recognize(imageUrl, "por");
-              extractedText += "\n" + ocrData.text;
-              addLog(`[INFO] OCR página ${i}/${numPages} concluído`);
+            if (isCNH) {
+              addLog(`[INFO] CNH Digital detectada, texto não contém CPF. Usando OCR...`);
+              for (let i = 1; i <= numPages; i++) {
+                const page = await pdf.getPage(i);
+                const viewport = page.getViewport({ scale: 3.0 });
+                const canvas = document.createElement("canvas");
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                const ctx = canvas.getContext("2d")!;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                await page.render({ canvasContext: ctx, viewport } as any).promise;
 
-              cpf = extractCPF(extractedText);
-              if (cpf) break;
+                const imageUrl = canvas.toDataURL("image/png");
+                const { data: ocrData } = await Tesseract.recognize(imageUrl, "por");
+                extractedText += "\n" + ocrData.text;
+                addLog(`[INFO] OCR página ${i}/${numPages} concluído`);
+
+                cpf = extractCPF(extractedText);
+                if (cpf) break;
+              }
+            } else {
+              addLog(`[INFO] Texto digital não contém CPF → Enviado para revisão manual`);
             }
           }
 
@@ -321,7 +318,7 @@ export default function DashboardPage() {
             addLog(`[OK] CPF encontrado: ${formatCPF(cpf)} em ${doc.file_name}`);
             extracted.push({ docId: doc.id, cpf });
           } else {
-            addLog(`[AVISO] CPF não encontrado na CNH: ${doc.file_name} → Enviado para revisão manual`);
+            addLog(`[AVISO] CPF não encontrado em: ${doc.file_name} → Enviado para revisão manual`);
             await supabase
               .from("documents")
               .update({ status: "manual_review", extracted_text: extractedText.substring(0, 500) })
