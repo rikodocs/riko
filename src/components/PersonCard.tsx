@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 
 export interface PersonDocument {
@@ -49,8 +50,16 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
   const [attaching, setAttaching] = useState(false);
   const [attachMsg, setAttachMsg] = useState<string | null>(null);
   const [pasteReady, setPasteReady] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewType, setPreviewType] = useState<"pdf" | "image" | null>(null);
+  const [localDocs, setLocalDocs] = useState<PersonDocument[]>(person.documents || []);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
+
+  // Sync localDocs when person.documents changes from parent
+  useEffect(() => {
+    setLocalDocs(person.documents || []);
+  }, [person.documents]);
 
   // Shared upload logic for files (from input, paste, or drop)
   async function uploadFiles(files: File[]) {
@@ -78,7 +87,7 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
         const { data: urlData } = supabase.storage
           .from("documents")
           .getPublicUrl(fileName);
-        const { error: insertError } = await supabase.from("documents").insert({
+        const { data: insertData, error: insertError } = await supabase.from("documents").insert({
           file_name: file.name,
           file_path: fileName,
           file_url: urlData.publicUrl,
@@ -86,9 +95,15 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
           status: person.used ? "used" : "consulted",
           cpf_extracted: person.cpf,
           person_id: person.id,
-        });
+        }).select().single();
         if (insertError) errs++;
-        else ok++;
+        else {
+          ok++;
+          // Add to local docs so card stays open
+          if (insertData) {
+            setLocalDocs(prev => [...prev, insertData as PersonDocument]);
+          }
+        }
       } catch { errs++; }
     }
     setAttaching(false);
@@ -231,7 +246,7 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
           {/* Documentos */}
           <div className="mt-4">
             <span className="text-text-disabled text-[10px] uppercase tracking-wider font-medium">
-              Documentos ({person.documents?.length || 0})
+              Documentos ({localDocs.length})
               {attachMsg && (
                 <span className={`ml-2 ${attachMsg.startsWith("!") ? "text-danger" : "text-success"}`}>
                   {attachMsg.replace(/^!/, "")}
@@ -239,16 +254,23 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
               )}
             </span>
             <div className="flex flex-wrap gap-3 mt-2">
-                {person.documents?.map((doc, di) => {
+                {localDocs.map((doc, di) => {
                   const ext = doc.file_name?.split(".").pop()?.toLowerCase() || "pdf";
-                  const downloadName = `${cleanName}${person.documents!.length > 1 ? `_${di + 1}` : ""}.${ext}`;
+                  const downloadName = `${cleanName}${localDocs.length > 1 ? `_${di + 1}` : ""}.${ext}`;
                   const isPdf = doc.file_type === "application/pdf" || ext === "pdf";
                   const isImage = doc.file_type?.startsWith("image/");
 
                   return (
                     <div key={doc.id} className="bg-surface-0 rounded-xl border border-surface-border overflow-hidden w-[220px]">
-                      {/* Preview */}
-                      <div className="w-full h-[160px] bg-glass overflow-hidden">
+                      {/* Preview - click to enlarge */}
+                      <div
+                        className="w-full h-[160px] bg-glass overflow-hidden cursor-zoom-in"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPreviewUrl(doc.file_url);
+                          setPreviewType(isPdf ? "pdf" : isImage ? "image" : null);
+                        }}
+                      >
                         {isImage ? (
                           <img
                             src={doc.file_url}
@@ -375,6 +397,44 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
             </details>
           )}
         </div>
+      )}
+
+      {/* Fullscreen preview modal via Portal */}
+      {previewUrl && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 bg-black/90 flex items-center justify-center"
+          style={{ zIndex: 99999 }}
+          onClick={() => { setPreviewUrl(null); setPreviewType(null); }}
+        >
+          <button
+            className="absolute top-4 right-4 w-10 h-10 bg-surface-1/80 backdrop-blur rounded-full flex items-center justify-center text-white hover:bg-surface-2 transition-colors"
+            style={{ zIndex: 100000 }}
+            onClick={(e) => { e.stopPropagation(); setPreviewUrl(null); setPreviewType(null); }}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <div
+            className="w-[90vw] h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {previewType === "pdf" ? (
+              <iframe
+                src={`${previewUrl}#toolbar=1&navpanes=0&view=FitH`}
+                className="w-full h-full border-0 rounded-lg"
+                title="Preview"
+              />
+            ) : previewType === "image" ? (
+              <img
+                src={previewUrl}
+                alt="Preview"
+                className="w-full h-full object-contain"
+              />
+            ) : null}
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
