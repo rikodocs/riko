@@ -154,20 +154,31 @@ export default function DashboardPage() {
   };
 
   async function loadStats() {
+    // Count documents for pending and manual_review
     const { data: docs } = await supabase.from("documents").select("status");
-    if (docs) {
-      const pending = docs.filter((d) => d.status === "pending").length;
-      const consulted = docs.filter((d) => d.status === "consulted").length;
-      const used = docs.filter((d) => d.status === "used").length;
-      const manual_review = docs.filter((d) => d.status === "manual_review").length;
-      setStats({
-        pending,
-        consulted,
-        used,
-        manual_review,
-        total: pending + consulted + used + manual_review,
-      });
-    }
+    const pending = docs?.filter((d) => d.status === "pending").length || 0;
+    const manual_review = docs?.filter((d) => d.status === "manual_review").length || 0;
+
+    // Count PEOPLE (not documents) for consulted and used
+    const { count: consultedCount } = await supabase
+      .from("people")
+      .select("id", { count: "exact", head: true })
+      .eq("used", false);
+    const { count: usedCount } = await supabase
+      .from("people")
+      .select("id", { count: "exact", head: true })
+      .eq("used", true);
+
+    const consulted = consultedCount || 0;
+    const used = usedCount || 0;
+
+    setStats({
+      pending,
+      consulted,
+      used,
+      manual_review,
+      total: pending + consulted + used + manual_review,
+    });
   }
 
   async function handleConsultar() {
