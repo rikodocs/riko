@@ -20,6 +20,31 @@ export default function ImportsPage() {
     loadRecentDocs();
   }, []);
 
+  // Paste support (Ctrl+V)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const files: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith("image/")) {
+          const file = items[i].getAsFile();
+          if (file) {
+            const ext = file.type.split("/")[1] || "png";
+            const named = new File([file], `colado_${Date.now()}.${ext}`, { type: file.type });
+            files.push(named);
+          }
+        }
+      }
+      if (files.length > 0) {
+        e.preventDefault();
+        handleFiles(files);
+      }
+    };
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [handleFiles]);
+
   async function loadRecentDocs() {
     const { data } = await supabase
       .from("documents")
@@ -170,7 +195,7 @@ export default function ImportsPage() {
           </div>
           <div>
             <p className="text-text-secondary text-sm font-medium">
-              Arraste e solte documentos aqui
+              Arraste e solte documentos aqui ou cole com Ctrl+V
             </p>
             <p className="text-text-tertiary text-xs mt-1">
               Aceita imagens (JPG, PNG) e PDFs
