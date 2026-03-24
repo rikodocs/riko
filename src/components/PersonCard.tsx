@@ -48,7 +48,59 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
   const [expanded, setExpanded] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const [attachMsg, setAttachMsg] = useState<string | null>(null);
+  const [pasteReady, setPasteReady] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
+
+  // Shared upload logic for files (from input, paste, or drop)
+  async function uploadFiles(files: File[]) {
+    if (files.length === 0) return;
+    setAttaching(true);
+    setAttachMsg(null);
+    let ok = 0;
+    let errs = 0;
+    for (const file of files) {
+      try {
+        const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
+        const baseName = file.name
+          .replace(/\.[^.]+$/, "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-zA-Z0-9]/g, "_")
+          .replace(/_+/g, "_")
+          .replace(/^_|_$/g, "")
+          || "doc";
+        const fileName = `${Date.now()}_${baseName}.${ext}`;
+        const { error: uploadError } = await supabase.storage
+          .from("documents")
+          .upload(fileName, file);
+        if (uploadError) { errs++; continue; }
+        const { data: urlData } = supabase.storage
+          .from("documents")
+          .getPublicUrl(fileName);
+        const { error: insertError } = await supabase.from("documents").insert({
+          file_name: file.name,
+          file_path: fileName,
+          file_url: urlData.publicUrl,
+          file_type: file.type,
+          status: person.used ? "used" : "consulted",
+          cpf_extracted: person.cpf,
+          person_id: person.id,
+        });
+        if (insertError) errs++;
+        else ok++;
+      } catch { errs++; }
+    }
+    setAttaching(false);
+    if (ok > 0) {
+      setAttachMsg(`${ok} anexado(s)!`);
+      onDocumentsChanged?.();
+    } else {
+      setAttachMsg(`!Falha ao anexar`);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setTimeout(() => setAttachMsg(null), 3000);
+  }
 
   // Merge legacy + new array fields
   const phones = person.phones?.length > 0 ? person.phones : (person.phone ? [person.phone] : []);
@@ -243,18 +295,56 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
                     </div>
                   );
                 })}
-              {/* Add document card */}
-              <label className={`bg-surface-0 rounded-xl border border-dashed border-surface-border overflow-hidden w-[220px] flex flex-col items-center justify-center cursor-pointer hover:border-primary hover:bg-primary-muted/30 transition-all ${attaching ? "opacity-50 pointer-events-none" : ""}`}>
+              {/* Add document card - supports click, paste (Ctrl+V), and drag & drop */}
+              <div
+                ref={dropZoneRef}
+                tabIndex={0}
+                className={`bg-surface-0 rounded-xl border border-dashed overflow-hidden w-[220px] flex flex-col items-center justify-center cursor-pointer transition-all outline-none ${
+                  pasteReady
+                    ? "border-primary bg-primary-muted/30"
+                    : "border-surface-border hover:border-primary hover:bg-primary-muted/30"
+                } ${attaching ? "opacity-50 pointer-events-none" : ""}`}
+                onClick={() => fileInputRef.current?.click()}
+                onFocus={() => setPasteReady(true)}
+                onBlur={() => setPasteReady(false)}
+                onPaste={async (e) => {
+                  e.preventDefault();
+                  const items = e.clipboardData?.items;
+                  if (!items) return;
+                  const files: File[] = [];
+                  for (const item of Array.from(items)) {
+                    if (item.kind === "file") {
+                      const f = item.getAsFile();
+                      if (f) files.push(new File([f], `colado_${Date.now()}.${f.type.split("/")[1] || "png"}`, { type: f.type }));
+                    }
+                  }
+                  if (files.length > 0) uploadFiles(files);
+                }}
+                onDragOver={(e) => { e.preventDefault(); setPasteReady(true); }}
+                onDragLeave={() => setPasteReady(false)}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  setPasteReady(false);
+                  const files = Array.from(e.dataTransfer.files).filter(f =>
+                    f.type.startsWith("image/") || f.type === "application/pdf"
+                  );
+                  if (files.length > 0) uploadFiles(files);
+                }}
+              >
                 <div className="w-full h-[160px] flex flex-col items-center justify-center gap-2">
                   {attaching ? (
                     <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                  ) : pasteReady ? (
+                    <svg className="w-10 h-10 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 8.25H7.5a2.25 2.25 0 00-2.25 2.25v9a2.25 2.25 0 002.25 2.25h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25H15M9 12l3 3m0 0l3-3m-3 3V2.25" />
+                    </svg>
                   ) : (
                     <svg className="w-10 h-10 text-text-disabled" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                     </svg>
                   )}
-                  <span className="text-[11px] text-text-tertiary font-medium">
-                    {attaching ? "Anexando..." : "Anexar"}
+                  <span className="text-[11px] text-text-tertiary font-medium text-center px-2">
+                    {attaching ? "Anexando..." : pasteReady ? "Cole a imagem (Ctrl+V)" : "Anexar ou Colar"}
                   </span>
                 </div>
                 <input
@@ -264,57 +354,12 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
                   accept="image/*,.pdf"
                   className="hidden"
                   disabled={attaching}
-                  onChange={async (e) => {
+                  onChange={(e) => {
                     const files = e.target.files;
-                    if (!files || files.length === 0) return;
-                    setAttaching(true);
-                    setAttachMsg(null);
-                    let ok = 0;
-                    let errs = 0;
-                    for (const file of Array.from(files)) {
-                      try {
-                        const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
-                        const baseName = file.name
-                          .replace(/\.[^.]+$/, "")
-                          .normalize("NFD")
-                          .replace(/[\u0300-\u036f]/g, "")
-                          .replace(/[^a-zA-Z0-9]/g, "_")
-                          .replace(/_+/g, "_")
-                          .replace(/^_|_$/g, "")
-                          || "doc";
-                        const fileName = `${Date.now()}_${baseName}.${ext}`;
-                        const { error: uploadError } = await supabase.storage
-                          .from("documents")
-                          .upload(fileName, file);
-                        if (uploadError) { errs++; continue; }
-                        const { data: urlData } = supabase.storage
-                          .from("documents")
-                          .getPublicUrl(fileName);
-                        const { error: insertError } = await supabase.from("documents").insert({
-                          file_name: file.name,
-                          file_path: fileName,
-                          file_url: urlData.publicUrl,
-                          file_type: file.type,
-                          status: person.used ? "used" : "consulted",
-                          cpf_extracted: person.cpf,
-                          person_id: person.id,
-                        });
-                        if (insertError) errs++;
-                        else ok++;
-                      } catch { errs++; }
-                    }
-                    setAttaching(false);
-                    if (ok > 0) {
-                      setAttachMsg(`${ok} anexado(s)!`);
-                      onDocumentsChanged?.();
-                    } else {
-                      setAttachMsg(`!Falha ao anexar`);
-                    }
-                    if (fileInputRef.current) fileInputRef.current.value = "";
-                    setTimeout(() => setAttachMsg(null), 3000);
+                    if (files && files.length > 0) uploadFiles(Array.from(files));
                   }}
                 />
-              </label>
+              </div>
             </div>
           </div>
 
