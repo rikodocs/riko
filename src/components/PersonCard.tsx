@@ -178,98 +178,16 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
 
           {/* Documentos */}
           <div className="mt-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-text-disabled text-[10px] uppercase tracking-wider font-medium">
-                Documentos ({person.documents?.length || 0})
-              </span>
-              <div className="flex items-center gap-2">
-                {attachMsg && (
-                  <span className={`text-[10px] font-medium ${attachMsg.startsWith("!") ? "text-danger" : "text-success"}`}>
-                    {attachMsg.replace(/^!/, "")}
-                  </span>
-                )}
-                <label className={`btn-ghost !py-1 !px-2.5 !text-[10px] !rounded-lg text-primary !border-primary/20 hover:!bg-primary-muted cursor-pointer flex items-center gap-1.5 ${attaching ? "opacity-50 pointer-events-none" : ""}`}>
-                  {attaching ? (
-                    <div className="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-                  ) : (
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                    </svg>
-                  )}
-                  {attaching ? "Anexando..." : "Anexar Documento"}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept="image/*,.pdf"
-                    className="hidden"
-                    disabled={attaching}
-                    onChange={async (e) => {
-                      const files = e.target.files;
-                      if (!files || files.length === 0) return;
-                      setAttaching(true);
-                      setAttachMsg(null);
-                      let ok = 0;
-                      let errs = 0;
-                      for (const file of Array.from(files)) {
-                        try {
-                          const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
-                          const baseName = file.name
-                            .replace(/\.[^.]+$/, "")
-                            .normalize("NFD")
-                            .replace(/[\u0300-\u036f]/g, "")
-                            .replace(/[^a-zA-Z0-9]/g, "_")
-                            .replace(/_+/g, "_")
-                            .replace(/^_|_$/g, "")
-                            || "doc";
-                          const fileName = `${Date.now()}_${baseName}.${ext}`;
-
-                          const { error: uploadError } = await supabase.storage
-                            .from("documents")
-                            .upload(fileName, file);
-
-                          if (uploadError) { errs++; continue; }
-
-                          const { data: urlData } = supabase.storage
-                            .from("documents")
-                            .getPublicUrl(fileName);
-
-                          const { error: insertError } = await supabase.from("documents").insert({
-                            file_name: file.name,
-                            file_path: fileName,
-                            file_url: urlData.publicUrl,
-                            file_type: file.type,
-                            status: person.used ? "used" : "consulted",
-                            cpf_extracted: person.cpf,
-                            person_id: person.id,
-                          });
-
-                          if (insertError) errs++;
-                          else ok++;
-                        } catch { errs++; }
-                      }
-                      setAttaching(false);
-                      if (ok > 0) {
-                        setAttachMsg(`${ok} anexado(s)!`);
-                        onDocumentsChanged?.();
-                      } else {
-                        setAttachMsg(`!Falha ao anexar`);
-                      }
-                      // Reset input
-                      if (fileInputRef.current) fileInputRef.current.value = "";
-                      setTimeout(() => setAttachMsg(null), 3000);
-                    }}
-                  />
-                </label>
-              </div>
-            </div>
-          {person.documents && person.documents.length > 0 && (
-            <>
-              <span className="hidden">
-                {/* count already shown above */}
-              </span>
-              <div className="flex flex-wrap gap-3 mt-2">
-                {person.documents.map((doc, di) => {
+            <span className="text-text-disabled text-[10px] uppercase tracking-wider font-medium">
+              Documentos ({person.documents?.length || 0})
+              {attachMsg && (
+                <span className={`ml-2 ${attachMsg.startsWith("!") ? "text-danger" : "text-success"}`}>
+                  {attachMsg.replace(/^!/, "")}
+                </span>
+              )}
+            </span>
+            <div className="flex flex-wrap gap-3 mt-2">
+                {person.documents?.map((doc, di) => {
                   const ext = doc.file_name?.split(".").pop()?.toLowerCase() || "pdf";
                   const downloadName = `${cleanName}${person.documents!.length > 1 ? `_${di + 1}` : ""}.${ext}`;
                   const isPdf = doc.file_type === "application/pdf" || ext === "pdf";
@@ -325,9 +243,79 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
                     </div>
                   );
                 })}
-              </div>
-            </>
-          )}
+              {/* Add document card */}
+              <label className={`bg-surface-0 rounded-xl border border-dashed border-surface-border overflow-hidden w-[220px] flex flex-col items-center justify-center cursor-pointer hover:border-primary hover:bg-primary-muted/30 transition-all ${attaching ? "opacity-50 pointer-events-none" : ""}`}>
+                <div className="w-full h-[160px] flex flex-col items-center justify-center gap-2">
+                  {attaching ? (
+                    <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                  ) : (
+                    <svg className="w-10 h-10 text-text-disabled" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                  )}
+                  <span className="text-[11px] text-text-tertiary font-medium">
+                    {attaching ? "Anexando..." : "Anexar"}
+                  </span>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,.pdf"
+                  className="hidden"
+                  disabled={attaching}
+                  onChange={async (e) => {
+                    const files = e.target.files;
+                    if (!files || files.length === 0) return;
+                    setAttaching(true);
+                    setAttachMsg(null);
+                    let ok = 0;
+                    let errs = 0;
+                    for (const file of Array.from(files)) {
+                      try {
+                        const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
+                        const baseName = file.name
+                          .replace(/\.[^.]+$/, "")
+                          .normalize("NFD")
+                          .replace(/[\u0300-\u036f]/g, "")
+                          .replace(/[^a-zA-Z0-9]/g, "_")
+                          .replace(/_+/g, "_")
+                          .replace(/^_|_$/g, "")
+                          || "doc";
+                        const fileName = `${Date.now()}_${baseName}.${ext}`;
+                        const { error: uploadError } = await supabase.storage
+                          .from("documents")
+                          .upload(fileName, file);
+                        if (uploadError) { errs++; continue; }
+                        const { data: urlData } = supabase.storage
+                          .from("documents")
+                          .getPublicUrl(fileName);
+                        const { error: insertError } = await supabase.from("documents").insert({
+                          file_name: file.name,
+                          file_path: fileName,
+                          file_url: urlData.publicUrl,
+                          file_type: file.type,
+                          status: person.used ? "used" : "consulted",
+                          cpf_extracted: person.cpf,
+                          person_id: person.id,
+                        });
+                        if (insertError) errs++;
+                        else ok++;
+                      } catch { errs++; }
+                    }
+                    setAttaching(false);
+                    if (ok > 0) {
+                      setAttachMsg(`${ok} anexado(s)!`);
+                      onDocumentsChanged?.();
+                    } else {
+                      setAttachMsg(`!Falha ao anexar`);
+                    }
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                    setTimeout(() => setAttachMsg(null), 3000);
+                  }}
+                />
+              </label>
+            </div>
           </div>
 
           {/* Raw data */}
