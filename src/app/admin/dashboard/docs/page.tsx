@@ -3,11 +3,15 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import PersonCard, { Person } from "@/components/PersonCard";
+import JSZip from "jszip";
 
 export default function DocsPage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [batchQty, setBatchQty] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportMsg, setExportMsg] = useState<string | null>(null);
 
   useEffect(() => { loadDocs(); }, []);
 
@@ -17,7 +21,7 @@ export default function DocsPage() {
       .from("people")
       .select("*, documents(id, file_name, file_url, file_path, file_type)")
       .eq("used", false)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: true });
     if (data) setPeople(data);
     setLoading(false);
   }
@@ -28,13 +32,104 @@ export default function DocsPage() {
     setPeople((prev) => prev.filter((p) => p.id !== personId));
   }
 
+  // Generate clean filename from person name
+  function cleanFileName(name: string, index: number, ext: string, total: number) {
+    const clean = (name || "documento")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9]/g, "")
+      .toUpperCase();
+    return total > 1 ? `${clean}_${index + 1}.${ext}` : `${clean}.${ext}`;
+  }
+
+  async function handleBatchExport() {
+    const qty = parseInt(batchQty);
+    if (!qty || qty <= 0) return;
+    if (qty > people.length) {
+      setExportMsg(`Só existem ${people.length} docs disponíveis.`);
+      setTimeout(() => setExportMsg(null), 3000);
+      return;
+    }
+
+    setExporting(true);
+    setExportMsg(null);
+
+    try {
+      // Pick first N people (ordered by created_at ascending)
+      const batch = people.slice(0, qty);
+      const zip = new JSZip();
+      let downloadCount = 0;
+
+      for (const person of batch) {
+        const docs = person.documents || [];
+        for (let di = 0; di < docs.length; di++) {
+          const doc = docs[di];
+          try {
+            const res = await fetch(doc.file_url);
+            const blob = await res.blob();
+            const ext = doc.file_name?.split(".").pop()?.toLowerCase() || "pdf";
+            const fileName = cleanFileName(person.name, di, ext, docs.length);
+            zip.file(fileName, blob);
+            downloadCount++;
+          } catch {
+            // Skip failed downloads
+          }
+        }
+      }
+
+      if (downloadCount === 0) {
+        setExportMsg("Nenhum arquivo baixado.");
+        setExporting(false);
+        return;
+      }
+
+      // Generate ZIP
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+
+      // Format date: DDMMYY
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, "0");
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const yy = String(now.getFullYear()).slice(-2);
+      const zipName = `${qty}docs${dd}${mm}${yy}.zip`;
+
+      // Download ZIP
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = zipName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // Mark all as used
+      for (const person of batch) {
+        await supabase.from("people").update({ used: true }).eq("id", person.id);
+        await supabase.from("documents").update({ status: "used" }).eq("person_id", person.id);
+      }
+
+      // Remove from list
+      const batchIds = new Set(batch.map((p) => p.id));
+      setPeople((prev) => prev.filter((p) => !batchIds.has(p.id)));
+
+      setExportMsg(`${qty} docs exportados e marcados como usados!`);
+      setBatchQty("");
+    } catch (err) {
+      setExportMsg(`Erro ao exportar: ${err instanceof Error ? err.message : "desconhecido"}`);
+    } finally {
+      setExporting(false);
+      setTimeout(() => setExportMsg(null), 5000);
+    }
+  }
+
   const filtered = people.filter(
     (p) => p.name?.toLowerCase().includes(search.toLowerCase()) || p.cpf?.includes(search)
   );
 
   return (
     <div className="space-y-4 animate-fade-in">
-      <div className="flex items-center gap-4">
+      {/* Search + Export bar */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
         <div className="relative flex-1 max-w-md">
           <svg className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-text-disabled" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -43,6 +138,54 @@ export default function DocsPage() {
         </div>
         <span className="text-[11px] text-text-disabled font-mono">{filtered.length} docs</span>
       </div>
+
+      {/* Batch export */}
+      {people.length > 0 && (
+        <div className="glass-static rounded-2xl px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            <span className="text-sm text-text-secondary font-medium">Exportar Lote</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="1"
+              max={people.length}
+              value={batchQty}
+              onChange={(e) => setBatchQty(e.target.value)}
+              placeholder={`1-${people.length}`}
+              disabled={exporting}
+              className="w-24 bg-surface-1 border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder-text-disabled focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all font-mono disabled:opacity-50 text-center"
+            />
+            <button
+              onClick={handleBatchExport}
+              disabled={exporting || !batchQty || parseInt(batchQty) <= 0}
+              className={`btn-primary !py-2 !px-4 !text-xs flex items-center gap-2 ${exporting ? "opacity-50 pointer-events-none" : ""}`}
+            >
+              {exporting ? (
+                <>
+                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Exportando...
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+                  </svg>
+                  Baixar ZIP + Marcar Usados
+                </>
+              )}
+            </button>
+          </div>
+          {exportMsg && (
+            <span className={`text-xs font-medium ${exportMsg.includes("exportados") ? "text-success" : "text-danger"}`}>
+              {exportMsg}
+            </span>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="space-y-3">

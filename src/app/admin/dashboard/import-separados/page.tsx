@@ -136,7 +136,7 @@ export default function ImportSeparadosPage() {
   };
 
   // Update CPF for a group
-  const updateGroupCPF = (groupId: string, value: string) => {
+  const updateGroupCPF = async (groupId: string, value: string) => {
     // Auto-format CPF
     const digits = value.replace(/\D/g, "").slice(0, 11);
     let formatted = digits;
@@ -145,8 +145,26 @@ export default function ImportSeparadosPage() {
     if (digits.length > 9) formatted = formatted.slice(0, 11) + "-" + digits.slice(9);
 
     setGroups((prev) =>
-      prev.map((g) => (g.id === groupId ? { ...g, cpf: formatted } : g))
+      prev.map((g) => (g.id === groupId ? { ...g, cpf: formatted, message: undefined, status: "pending" as const } : g))
     );
+
+    // When CPF is complete (11 digits), check if it already exists
+    if (digits.length === 11) {
+      const { count } = await supabase
+        .from("people")
+        .select("id", { count: "exact", head: true })
+        .eq("cpf", digits);
+
+      if (count && count > 0) {
+        setGroups((prev) =>
+          prev.map((g) =>
+            g.id === groupId
+              ? { ...g, status: "duplicate", message: "CPF já existe no sistema" }
+              : g
+          )
+        );
+      }
+    }
   };
 
   // Remove a group (return files to staged)
@@ -239,21 +257,28 @@ export default function ImportSeparadosPage() {
       );
 
       try {
+        // Check if CPF already exists as a person
+        const { count: personCount } = await supabase
+          .from("people")
+          .select("id", { count: "exact", head: true })
+          .eq("cpf", cpfDigits);
+
+        if (personCount && personCount > 0) {
+          setGroups((prev) =>
+            prev.map((g) =>
+              g.id === group.id
+                ? { ...g, status: "duplicate", message: "CPF já existe no sistema" }
+                : g
+            )
+          );
+          dupCount++;
+          continue;
+        }
+
         // Upload all files of this group
         const uploadedDocs: string[] = [];
 
         for (const sf of group.files) {
-          // Check duplicate by file name
-          const { count: nameCount } = await supabase
-            .from("documents")
-            .select("id", { count: "exact", head: true })
-            .eq("file_name", sf.file.name);
-
-          if (nameCount && nameCount > 0) {
-            // Skip duplicate file but continue
-            continue;
-          }
-
           const ext = sf.file.name.split(".").pop()?.toLowerCase() || "bin";
           const baseName = sf.file.name
             .replace(/\.[^.]+$/, "")
@@ -293,11 +318,11 @@ export default function ImportSeparadosPage() {
           setGroups((prev) =>
             prev.map((g) =>
               g.id === group.id
-                ? { ...g, status: "error", message: "Nenhum arquivo novo enviado (todos duplicados)" }
+                ? { ...g, status: "error", message: "Falha ao enviar arquivos" }
                 : g
             )
           );
-          dupCount++;
+          errorCount++;
           continue;
         }
 
