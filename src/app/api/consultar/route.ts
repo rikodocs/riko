@@ -47,11 +47,18 @@ export async function POST(request: Request) {
       );
     }
 
-    log.push(`[INFO] Consultando ${documents.length} documento(s)...`);
-
+    // Group documents by CPF so multiple docs with same CPF are handled together
+    const cpfGroups = new Map<string, string[]>();
     for (const { docId, cpf } of documents) {
+      if (!cpfGroups.has(cpf)) cpfGroups.set(cpf, []);
+      cpfGroups.get(cpf)!.push(docId);
+    }
+
+    log.push(`[INFO] Consultando ${cpfGroups.size} CPF(s) com ${documents.length} documento(s)...`);
+
+    for (const [cpf, docIds] of cpfGroups) {
       try {
-        log.push(`[INFO] Processando CPF: ${formatCPF(cpf)}`);
+        log.push(`[INFO] Processando CPF: ${formatCPF(cpf)} (${docIds.length} doc(s))`);
 
         // Check if this person already exists (duplicate detection)
         const { data: existingPerson } = await supabase
@@ -70,14 +77,16 @@ export async function POST(request: Request) {
           );
           duplicates.push(cpf);
 
-          // Just mark as duplicate, don't link to person
-          await supabase
-            .from("documents")
-            .update({
-              status: "duplicate",
-              cpf_extracted: cpf,
-            })
-            .eq("id", docId);
+          // Mark all docs for this CPF as duplicate
+          for (const dId of docIds) {
+            await supabase
+              .from("documents")
+              .update({
+                status: "duplicate",
+                cpf_extracted: cpf,
+              })
+              .eq("id", dId);
+          }
           continue;
         }
 
@@ -188,15 +197,17 @@ export async function POST(request: Request) {
           continue;
         }
 
-        // Update document
-        await supabase
-          .from("documents")
-          .update({
-            status: "consulted",
-            cpf_extracted: cpf,
-            person_id: newPerson.id,
-          })
-          .eq("id", docId);
+        // Update ALL documents for this CPF
+        for (const dId of docIds) {
+          await supabase
+            .from("documents")
+            .update({
+              status: "consulted",
+              cpf_extracted: cpf,
+              person_id: newPerson.id,
+            })
+            .eq("id", dId);
+        }
 
         log.push(
           `[OK] ${personData.name || "Pessoa"} (CPF: ${formatCPF(cpf)}) registrado com sucesso!`
