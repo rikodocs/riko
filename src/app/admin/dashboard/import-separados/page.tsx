@@ -350,14 +350,34 @@ export default function ImportSeparadosPage() {
             );
             dupCount++;
           } else {
-            setGroups((prev) =>
-              prev.map((g) =>
-                g.id === group.id
-                  ? { ...g, status: "done", message: "Consultado com sucesso!" }
-                  : g
-              )
-            );
-            successCount++;
+            // Verify person was actually created by checking the database
+            const { data: verifyPerson } = await supabase
+              .from("people")
+              .select("id, name")
+              .eq("cpf", cpfDigits)
+              .single();
+
+            if (verifyPerson) {
+              setGroups((prev) =>
+                prev.map((g) =>
+                  g.id === group.id
+                    ? { ...g, status: "done", message: `Consultado: ${verifyPerson.name || "OK"}` }
+                    : g
+                )
+              );
+              successCount++;
+            } else {
+              // API returned 200 but person wasn't created - check logs for error
+              const errorLog = result.log?.find((l: string) => l.includes("[ERRO]")) || "Erro desconhecido na API";
+              setGroups((prev) =>
+                prev.map((g) =>
+                  g.id === group.id
+                    ? { ...g, status: "error", message: typeof errorLog === "string" ? errorLog.replace(/^\[ERRO\]\s*/, "") : "Falha na consulta" }
+                    : g
+                )
+              );
+              errorCount++;
+            }
           }
         } else {
           setGroups((prev) =>

@@ -215,11 +215,21 @@ export async function POST(request: Request) {
       } catch (err) {
         const message = err instanceof Error ? err.message : "Erro desconhecido";
         log.push(`[ERRO] Falha ao processar CPF ${formatCPF(cpf)}: ${message}`);
+        // Mark all docs for this CPF as error
+        for (const dId of docIds) {
+          await supabase
+            .from("documents")
+            .update({ status: "error" })
+            .eq("id", dId);
+        }
       }
     }
 
+    // Count how many CPFs were actually successful (person created + docs linked)
+    const successCount = cpfGroups.size - duplicates.length;
+
     log.push(`\n[INFO] Processamento concluído.`);
-    return NextResponse.json({ log, notifications, duplicates });
+    return NextResponse.json({ log, notifications, duplicates, successCount });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Erro interno";
     return NextResponse.json({ error: message }, { status: 500 });
