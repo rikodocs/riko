@@ -47,7 +47,7 @@ export default function RevisaoPage() {
       .from("documents")
       .select("id, file_name, file_url, file_path, file_type, extracted_text, created_at")
       .eq("status", "manual_review")
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: false });
     if (data) setDocs(data);
     setLoading(false);
   }

@@ -374,23 +374,24 @@ export default function DashboardPage() {
           } as any).promise;
           const numPages = Math.min(pdf.numPages, 5);
 
-          // Extract digital text from PDF (simple join - proven method)
+          // Extract digital text from PDF - stop early if CPF found
           addLog(`[INFO] Tentando extrair texto digital do PDF...`);
           let extractedText = "";
+          let cpf: string | null = null;
           for (let i = 1; i <= numPages; i++) {
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const pageText = textContent.items.map((item: any) => item.str || "").join(" ");
             extractedText += " " + pageText;
-            addLog(`[INFO] Texto página ${i}: ${pageText.substring(0, 120)}...`);
-          }
+            addLog(`[INFO] Texto página ${i}/${numPages}: ${pageText.substring(0, 120)}...`);
 
-          // Step 1: Try to extract CPF from digital text (works for ANY document type)
-          let cpf = extractCPF(extractedText);
-
-          if (cpf) {
-            addLog(`[OK] CPF encontrado no texto digital do PDF!`);
+            // Try to extract CPF after each page - stop if found
+            cpf = extractCPF(extractedText);
+            if (cpf) {
+              addLog(`[OK] CPF encontrado no texto digital (página ${i})!`);
+              break;
+            }
           }
 
           // Step 2: If not found, check if it's a CNH (worth trying OCR)
