@@ -143,10 +143,16 @@ export default function DashboardPage() {
   const [consultLog, setConsultLog] = useState<string[]>([]);
   const [notifications, setNotifications] = useState<string[]>([]);
   const logRef = useRef<string[]>([]);
+  const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadStats();
   }, []);
+
+  // Auto-scroll log to bottom
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [consultLog]);
 
   const addLog = (msg: string) => {
     logRef.current = [...logRef.current, msg];
@@ -209,8 +215,10 @@ export default function DashboardPage() {
 
       addLog(`[INFO] Processando ${pendingDocs.length} documento(s) pendente(s)...`);
 
-      // 2. OCR each document in the browser
-      const extracted: { docId: string; cpf: string }[] = [];
+      // 2. Process each document individually (extract CPF → consult API → update stats in real time)
+      let successCount = 0;
+      let manualCount = 0;
+      let errorCount = 0;
 
       for (const doc of pendingDocs as PendingDoc[]) {
         addLog(`[INFO] Lendo documento: ${doc.file_name}`);
@@ -223,6 +231,8 @@ export default function DashboardPage() {
 
           if (dlError || !fileData) {
             addLog(`[ERRO] Falha ao baixar: ${doc.file_name} - ${dlError?.message || "sem dados"}`);
+            errorCount++;
+            await loadStats();
             continue;
           }
 
@@ -233,6 +243,8 @@ export default function DashboardPage() {
               .from("documents")
               .update({ status: "manual_review" })
               .eq("id", doc.id);
+            manualCount++;
+            await loadStats();
             continue;
           }
 
@@ -242,6 +254,8 @@ export default function DashboardPage() {
               .from("documents")
               .update({ status: "manual_review" })
               .eq("id", doc.id);
+            manualCount++;
+            await loadStats();
             continue;
           }
 
@@ -316,47 +330,48 @@ export default function DashboardPage() {
 
           if (cpf) {
             addLog(`[OK] CPF encontrado: ${formatCPF(cpf)} em ${doc.file_name}`);
-            extracted.push({ docId: doc.id, cpf });
+
+            // Immediately send to API for consultation
+            addLog(`[INFO] Consultando API para CPF: ${formatCPF(cpf)}...`);
+            const res = await fetch("/api/consultar", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ documents: [{ docId: doc.id, cpf }] }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+              addLog(`[ERRO] ${data.error}`);
+              errorCount++;
+            } else {
+              if (data.log) {
+                data.log.forEach((line: string) => addLog(line));
+              }
+              if (data.notifications?.length > 0) {
+                setNotifications((prev) => [...prev, ...data.notifications]);
+              }
+              successCount++;
+            }
           } else {
             addLog(`[AVISO] CPF não encontrado em: ${doc.file_name} → Enviado para revisão manual`);
             await supabase
               .from("documents")
               .update({ status: "manual_review", extracted_text: extractedText.substring(0, 500) })
               .eq("id", doc.id);
+            manualCount++;
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          addLog(`[ERRO] Falha no OCR de ${doc.file_name}: ${msg}`);
+          addLog(`[ERRO] Falha ao processar ${doc.file_name}: ${msg}`);
+          errorCount++;
         }
+
+        // Update stats after EACH document
+        await loadStats();
       }
 
-      // 3. Send extracted CPFs to server for API consultation
-      if (extracted.length > 0) {
-        addLog(`\n[INFO] Enviando ${extracted.length} CPF(s) para consulta na API...`);
-
-        const res = await fetch("/api/consultar", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ documents: extracted }),
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          addLog(`[ERRO] ${data.error}`);
-        } else {
-          if (data.log) {
-            data.log.forEach((line: string) => addLog(line));
-          }
-          if (data.notifications?.length > 0) {
-            setNotifications(data.notifications);
-          }
-        }
-      } else {
-        addLog("[AVISO] Nenhum CPF foi extraído dos documentos.");
-      }
-
-      await loadStats();
+      addLog(`\n[INFO] Processamento concluído: ${successCount} consultado(s), ${manualCount} revisão manual, ${errorCount} erro(s).`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       addLog(`[ERRO] Erro inesperado: ${msg}`);
@@ -461,6 +476,7 @@ export default function DashboardPage() {
                 {line}
               </div>
             ))}
+            <div ref={logEndRef} />
           </div>
         )}
       </div>
