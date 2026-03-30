@@ -137,6 +137,60 @@ function formatCPF(cpf: string): string {
   return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 }
 
+// Parse a date in DD/MM/YYYY format
+function parseDate(str: string): Date | null {
+  const m = str.match(/(\d{2})\s*[\/\-\.]\s*(\d{2})\s*[\/\-\.]\s*(\d{4})/);
+  if (!m) return null;
+  const d = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]));
+  if (isNaN(d.getTime())) return null;
+  return d;
+}
+
+// Check if document is expired based on text content
+// Returns { expired: boolean, reason?: string }
+function checkDocExpiry(text: string): { expired: boolean; reason?: string } {
+  const today = new Date();
+  const isCNH = /CNH|HABILITA|CARTEIRA\s*NACIONAL|SENATRAN/i.test(text);
+  const isRG = /IDENTIDADE|REGISTRO\s*GERAL|SSP|SDS|SEJUSP|DETRAN|IFP|IGP/i.test(text);
+
+  if (isCNH) {
+    // CNH: look for VALIDADE field
+    const validadeMatch = text.match(/(?:VALIDADE|4b\s*VALIDADE|VAL\.?)\s*[:\s]*(\d{2}\s*[\/\-\.]\s*\d{2}\s*[\/\-\.]\s*\d{4})/i);
+    if (validadeMatch) {
+      const valDate = parseDate(validadeMatch[1]);
+      if (valDate && valDate < today) {
+        const formatted = validadeMatch[1].replace(/\s/g, "");
+        return { expired: true, reason: `CNH vencida em ${formatted}` };
+      }
+    }
+  }
+
+  if (isRG) {
+    // RG: look for DATA DE EXPEDIÇÃO / EMISSÃO / EXPEDICAO
+    const emissaoPatterns = [
+      /(?:DATA\s*(?:DE\s*)?(?:EXPEDI[CÇ][AÃ]O|EMISS[AÃ]O))\s*[:\s]*(\d{2}\s*[\/\-\.]\s*\d{2}\s*[\/\-\.]\s*\d{4})/i,
+      /(?:EXPEDIDA?\s*(?:EM)?|EMITID[AO]\s*(?:EM)?)\s*[:\s]*(\d{2}\s*[\/\-\.]\s*\d{2}\s*[\/\-\.]\s*\d{4})/i,
+      /(?:DATA\s*EXPEDICAO)\s*[:\s]*(\d{2}\s*[\/\-\.]\s*\d{2}\s*[\/\-\.]\s*\d{4})/i,
+    ];
+    for (const pattern of emissaoPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        const emDate = parseDate(match[1]);
+        if (emDate) {
+          const tenYearsAgo = new Date();
+          tenYearsAgo.setFullYear(tenYearsAgo.getFullYear() - 10);
+          if (emDate < tenYearsAgo) {
+            const formatted = match[1].replace(/\s/g, "");
+            return { expired: true, reason: `RG emitido em ${formatted} (mais de 10 anos)` };
+          }
+        }
+      }
+    }
+  }
+
+  return { expired: false };
+}
+
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats>({ pending: 0, consulted: 0, used: 0, manual_review: 0, total: 0 });
   const [consulting, setConsulting] = useState(false);
@@ -330,6 +384,19 @@ export default function DashboardPage() {
 
           if (cpf) {
             addLog(`[OK] CPF encontrado: ${formatCPF(cpf)} em ${doc.file_name}`);
+
+            // Check if document is expired
+            const expiry = checkDocExpiry(extractedText);
+            if (expiry.expired) {
+              addLog(`[AVISO] Documento vencido: ${expiry.reason} → Enviado para revisão manual`);
+              await supabase
+                .from("documents")
+                .update({ status: "manual_review", cpf_extracted: cpf, extracted_text: extractedText.substring(0, 500) })
+                .eq("id", doc.id);
+              manualCount++;
+              await loadStats();
+              continue;
+            }
 
             // Immediately send to API for consultation
             addLog(`[INFO] Consultando API para CPF: ${formatCPF(cpf)}...`);
