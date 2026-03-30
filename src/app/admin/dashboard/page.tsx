@@ -156,18 +156,43 @@ function checkDocExpiry(text: string): { expired: boolean; reason?: string; logs
 
   if (isCNH) {
     logs.push(`[INFO] Tipo de documento: CNH`);
-    const validadeMatch = text.match(/(?:VALIDADE|4b\s*VALIDADE|VAL\.?)\s*[:\s]*(\d{2}\s*[\/\-\.]\s*\d{2}\s*[\/\-\.]\s*\d{4})/i);
+
+    // Multiple patterns to catch OCR variations of "VALIDADE" field
+    const validadePatterns = [
+      // Standard: VALIDADE 01/02/2028 or 4b VALIDADE 01/02/2028
+      /(?:4\s*b\s*)?V\s*A\s*L\s*I\s*D\s*A\s*D\s*E\s*[:\s]*(\d{2}\s*[\/\-\.]\s*\d{2}\s*[\/\-\.]\s*\d{4})/i,
+      // OCR confusions: VAIIDADE, VAL1DADE, VALIDADÉ, VALLDADE
+      /(?:4\s*b\s*)?V\s*A\s*[LI1l]\s*[I1l]\s*D\s*A\s*D\s*[EÉ]\s*[:\s]*(\d{2}\s*[\/\-\.]\s*\d{2}\s*[\/\-\.]\s*\d{4})/i,
+      // Short form: VAL. or VAL:
+      /\bVAL\.?\s*[:\s]+(\d{2}\s*[\/\-\.]\s*\d{2}\s*[\/\-\.]\s*\d{4})/i,
+      // "Data de Validade" variant
+      /DATA\s*(?:DE\s*)?VALIDADE\s*[:\s]*(\d{2}\s*[\/\-\.]\s*\d{2}\s*[\/\-\.]\s*\d{4})/i,
+      // Fallback: look for date pattern after "4b" field marker (CNH standard)
+      /4\s*b[^0-9]*(\d{2}\s*[\/\-\.]\s*\d{2}\s*[\/\-\.]\s*\d{4})/i,
+    ];
+
+    let validadeMatch: RegExpMatchArray | null = null;
+    for (const pattern of validadePatterns) {
+      validadeMatch = text.match(pattern);
+      if (validadeMatch) break;
+    }
+
     if (validadeMatch) {
       const formatted = validadeMatch[1].replace(/\s/g, "");
+      logs.push(`[INFO] Texto validade encontrado: "${formatted}"`);
       const valDate = parseDate(validadeMatch[1]);
       if (valDate && valDate < today) {
         logs.push(`[AVISO] Validade CNH: ${formatted} (VENCIDA)`);
         return { expired: true, reason: `CNH vencida em ${formatted}`, logs };
-      } else {
+      } else if (valDate) {
         logs.push(`[OK] Validade CNH: ${formatted} (vigente)`);
+      } else {
+        logs.push(`[AVISO] Data de validade encontrada mas não foi possível interpretar: ${formatted}`);
       }
     } else {
-      logs.push(`[INFO] Campo VALIDADE não encontrado no texto`);
+      // Log a snippet of the text to help diagnose why validade wasn't found
+      const snippet = text.substring(0, 300).replace(/\n/g, " ");
+      logs.push(`[INFO] Campo VALIDADE não encontrado. Trecho do texto: "${snippet}..."`);
     }
   } else if (isRG) {
     logs.push(`[INFO] Tipo de documento: RG`);
