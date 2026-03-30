@@ -147,48 +147,63 @@ function parseDate(str: string): Date | null {
 }
 
 // Check if document is expired based on text content
-// Returns { expired: boolean, reason?: string }
-function checkDocExpiry(text: string): { expired: boolean; reason?: string } {
+// Returns { expired, reason, logs[] } for real-time diagnostics
+function checkDocExpiry(text: string): { expired: boolean; reason?: string; logs: string[] } {
   const today = new Date();
+  const logs: string[] = [];
   const isCNH = /CNH|HABILITA|CARTEIRA\s*NACIONAL|SENATRAN/i.test(text);
   const isRG = /IDENTIDADE|REGISTRO\s*GERAL|SSP|SDS|SEJUSP|DETRAN|IFP|IGP/i.test(text);
 
   if (isCNH) {
-    // CNH: look for VALIDADE field
+    logs.push(`[INFO] Tipo de documento: CNH`);
     const validadeMatch = text.match(/(?:VALIDADE|4b\s*VALIDADE|VAL\.?)\s*[:\s]*(\d{2}\s*[\/\-\.]\s*\d{2}\s*[\/\-\.]\s*\d{4})/i);
     if (validadeMatch) {
+      const formatted = validadeMatch[1].replace(/\s/g, "");
       const valDate = parseDate(validadeMatch[1]);
       if (valDate && valDate < today) {
-        const formatted = validadeMatch[1].replace(/\s/g, "");
-        return { expired: true, reason: `CNH vencida em ${formatted}` };
+        logs.push(`[AVISO] Validade CNH: ${formatted} (VENCIDA)`);
+        return { expired: true, reason: `CNH vencida em ${formatted}`, logs };
+      } else {
+        logs.push(`[OK] Validade CNH: ${formatted} (vigente)`);
       }
+    } else {
+      logs.push(`[INFO] Campo VALIDADE não encontrado no texto`);
     }
-  }
-
-  if (isRG) {
-    // RG: look for DATA DE EXPEDIÇÃO / EMISSÃO / EXPEDICAO
+  } else if (isRG) {
+    logs.push(`[INFO] Tipo de documento: RG`);
     const emissaoPatterns = [
       /(?:DATA\s*(?:DE\s*)?(?:EXPEDI[CÇ][AÃ]O|EMISS[AÃ]O))\s*[:\s]*(\d{2}\s*[\/\-\.]\s*\d{2}\s*[\/\-\.]\s*\d{4})/i,
       /(?:EXPEDIDA?\s*(?:EM)?|EMITID[AO]\s*(?:EM)?)\s*[:\s]*(\d{2}\s*[\/\-\.]\s*\d{2}\s*[\/\-\.]\s*\d{4})/i,
       /(?:DATA\s*EXPEDICAO)\s*[:\s]*(\d{2}\s*[\/\-\.]\s*\d{2}\s*[\/\-\.]\s*\d{4})/i,
     ];
+    let found = false;
     for (const pattern of emissaoPatterns) {
       const match = text.match(pattern);
       if (match) {
+        found = true;
+        const formatted = match[1].replace(/\s/g, "");
         const emDate = parseDate(match[1]);
         if (emDate) {
           const tenYearsAgo = new Date();
           tenYearsAgo.setFullYear(tenYearsAgo.getFullYear() - 10);
           if (emDate < tenYearsAgo) {
-            const formatted = match[1].replace(/\s/g, "");
-            return { expired: true, reason: `RG emitido em ${formatted} (mais de 10 anos)` };
+            logs.push(`[AVISO] Data emissão RG: ${formatted} (mais de 10 anos - VENCIDO)`);
+            return { expired: true, reason: `RG emitido em ${formatted} (mais de 10 anos)`, logs };
+          } else {
+            logs.push(`[OK] Data emissão RG: ${formatted} (menos de 10 anos - válido)`);
           }
         }
+        break;
       }
     }
+    if (!found) {
+      logs.push(`[INFO] Campo DATA DE EMISSÃO não encontrado no texto`);
+    }
+  } else {
+    logs.push(`[INFO] Tipo de documento: Outro (sem verificação de vencimento)`);
   }
 
-  return { expired: false };
+  return { expired: false, logs };
 }
 
 export default function DashboardPage() {
@@ -385,8 +400,9 @@ export default function DashboardPage() {
           if (cpf) {
             addLog(`[OK] CPF encontrado: ${formatCPF(cpf)} em ${doc.file_name}`);
 
-            // Check if document is expired
+            // Check if document is expired (with diagnostic logs)
             const expiry = checkDocExpiry(extractedText);
+            expiry.logs.forEach(l => addLog(l));
             if (expiry.expired) {
               addLog(`[AVISO] Documento vencido: ${expiry.reason} → Enviado para revisão manual`);
               await supabase

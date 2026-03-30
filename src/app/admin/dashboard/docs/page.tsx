@@ -21,7 +21,7 @@ export default function DocsPage() {
       .from("people")
       .select("*, documents(id, file_name, file_url, file_path, file_type)")
       .eq("used", false)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: false });
     if (data) setPeople(data);
     setLoading(false);
   }
