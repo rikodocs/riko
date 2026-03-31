@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 
@@ -29,6 +29,8 @@ function isValidCPF(cpf: string): boolean {
   return true;
 }
 
+const PER_PAGE = 20;
+
 export default function RevisaoPage() {
   const [docs, setDocs] = useState<ReviewDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +38,7 @@ export default function RevisaoPage() {
   const [submitting, setSubmitting] = useState<Record<string, boolean>>({});
   const [messages, setMessages] = useState<Record<string, { type: "success" | "error"; text: string }>>({});
   const [previewDoc, setPreviewDoc] = useState<ReviewDoc | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     loadDocs();
@@ -52,6 +55,19 @@ export default function RevisaoPage() {
     setLoading(false);
   }
 
+  const totalPages = Math.max(1, Math.ceil(docs.length / PER_PAGE));
+  const paginatedDocs = useMemo(() => {
+    const start = (currentPage - 1) * PER_PAGE;
+    return docs.slice(start, start + PER_PAGE);
+  }, [docs, currentPage]);
+
+  // When docs change (e.g. after discard/consult), adjust page if needed
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(Math.max(1, totalPages));
+    }
+  }, [docs.length, totalPages, currentPage]);
+
   async function handleSubmitCPF(doc: ReviewDoc) {
     const cpfRaw = cpfInputs[doc.id]?.replace(/\D/g, "") || "";
     if (!isValidCPF(cpfRaw)) {
@@ -63,7 +79,6 @@ export default function RevisaoPage() {
     setMessages((prev) => ({ ...prev, [doc.id]: undefined as unknown as { type: "success" | "error"; text: string } }));
 
     try {
-      // Send to the same API route used by auto-consultation
       const res = await fetch("/api/consultar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -75,16 +90,13 @@ export default function RevisaoPage() {
       if (!res.ok) {
         setMessages((prev) => ({ ...prev, [doc.id]: { type: "error", text: data.error || "Erro na consulta" } }));
       } else {
-        // Check if it was a duplicate via explicit flag from API
         const isDuplicate = data.duplicates?.length > 0;
         if (isDuplicate) {
-          // Extract notification message for details
           const detail = data.notifications?.[0] || "CPF já existe no sistema.";
           setMessages((prev) => ({
             ...prev,
             [doc.id]: { type: "error", text: detail },
           }));
-          // Remove from list after user reads the message
           setTimeout(() => {
             setDocs((prev) => prev.filter((d) => d.id !== doc.id));
           }, 3000);
@@ -93,7 +105,6 @@ export default function RevisaoPage() {
             ...prev,
             [doc.id]: { type: "success", text: "Consultado com sucesso!" },
           }));
-          // Remove from list after brief delay
           setTimeout(() => {
             setDocs((prev) => prev.filter((d) => d.id !== doc.id));
           }, 1500);
@@ -126,7 +137,18 @@ export default function RevisaoPage() {
         </span>
       </div>
 
-      {/* Full-screen preview modal - rendered via Portal on document.body to escape all parent stacking contexts */}
+      {/* Pagination top */}
+      {docs.length > PER_PAGE && (
+        <PaginationBar
+          currentPage={currentPage}
+          totalPages={totalPages}
+          total={docs.length}
+          perPage={PER_PAGE}
+          onPageChange={setCurrentPage}
+        />
+      )}
+
+      {/* Full-screen preview modal */}
       {previewDoc && typeof document !== "undefined" && createPortal(
         <div
           id="preview-modal-root"
@@ -140,7 +162,6 @@ export default function RevisaoPage() {
             background: "#000",
           }}
         >
-          {/* Close button - ALWAYS top-right */}
           <button
             onClick={() => setPreviewDoc(null)}
             style={{
@@ -165,8 +186,6 @@ export default function RevisaoPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
-
-          {/* File name - top-left */}
           <div
             style={{
               position: "fixed",
@@ -183,8 +202,6 @@ export default function RevisaoPage() {
               {previewDoc.file_name}
             </p>
           </div>
-
-          {/* Document content - fills entire screen */}
           {previewDoc.file_type?.startsWith("image/") ? (
             <div
               style={{
@@ -245,7 +262,7 @@ export default function RevisaoPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {docs.map((doc, i) => {
+          {paginatedDocs.map((doc, i) => {
             const ext = doc.file_name?.split(".").pop()?.toLowerCase() || "";
             const isPdf = doc.file_type === "application/pdf" || ext === "pdf";
             const isImage = doc.file_type?.startsWith("image/");
@@ -284,7 +301,6 @@ export default function RevisaoPage() {
                         </svg>
                       </div>
                     )}
-                    {/* Overlay with "click to expand" hint */}
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
                       <div className="bg-black/70 backdrop-blur-sm rounded-xl px-4 py-2 flex items-center gap-2 text-white text-xs font-medium">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -295,10 +311,9 @@ export default function RevisaoPage() {
                     </div>
                   </div>
 
-                  {/* Right panel: info + CPF input */}
+                  {/* Right panel */}
                   <div className="flex-1 p-5 flex flex-col justify-between min-w-0">
                     <div>
-                      {/* File name & date */}
                       <div className="flex items-start justify-between gap-3 mb-4">
                         <div className="min-w-0">
                           <p className="text-text-primary font-medium text-[13px] truncate">
@@ -312,7 +327,6 @@ export default function RevisaoPage() {
                         <span className="badge badge-danger shrink-0">Sem CPF</span>
                       </div>
 
-                      {/* Extracted text hint */}
                       {doc.extracted_text && (
                         <details className="mb-4">
                           <summary className="text-[11px] text-text-disabled cursor-pointer hover:text-text-tertiary transition-colors">
@@ -324,7 +338,6 @@ export default function RevisaoPage() {
                         </details>
                       )}
 
-                      {/* CPF Input */}
                       <div className="space-y-3">
                         <label className="text-text-disabled text-[10px] uppercase tracking-wider font-medium">
                           Informe o CPF do documento
@@ -337,7 +350,6 @@ export default function RevisaoPage() {
                               onChange={(e) => {
                                 const formatted = formatCPFInput(e.target.value);
                                 setCpfInputs((prev) => ({ ...prev, [doc.id]: formatted }));
-                                // Clear error when typing
                                 if (messages[doc.id]?.type === "error") {
                                   setMessages((prev) => {
                                     const copy = { ...prev };
@@ -375,7 +387,6 @@ export default function RevisaoPage() {
                           </button>
                         </div>
 
-                        {/* Message */}
                         {message && (
                           <div
                             className={`px-3 py-2 rounded-lg text-[11px] font-medium animate-fade-in ${
@@ -390,7 +401,6 @@ export default function RevisaoPage() {
                       </div>
                     </div>
 
-                    {/* Discard button */}
                     <div className="mt-4 pt-3 border-t border-surface-border flex justify-end">
                       <button
                         onClick={() => handleDiscard(doc.id)}
@@ -409,6 +419,101 @@ export default function RevisaoPage() {
           })}
         </div>
       )}
+
+      {/* Pagination bottom */}
+      {docs.length > PER_PAGE && (
+        <PaginationBar
+          currentPage={currentPage}
+          totalPages={totalPages}
+          total={docs.length}
+          perPage={PER_PAGE}
+          onPageChange={setCurrentPage}
+        />
+      )}
+    </div>
+  );
+}
+
+// Reusable pagination component
+function PaginationBar({
+  currentPage,
+  totalPages,
+  total,
+  perPage,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  total: number;
+  perPage: number;
+  onPageChange: (p: number) => void;
+}) {
+  const start = (currentPage - 1) * perPage + 1;
+  const end = Math.min(currentPage * perPage, total);
+
+  // Generate page numbers to show
+  const pages: (number | "...")[] = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (currentPage > 3) pages.push("...");
+    for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+      pages.push(i);
+    }
+    if (currentPage < totalPages - 2) pages.push("...");
+    pages.push(totalPages);
+  }
+
+  return (
+    <div className="glass-static rounded-2xl px-5 py-3 flex items-center justify-between gap-4 flex-wrap">
+      <span className="text-text-disabled text-[12px] font-mono">
+        {start}-{end} de {total}
+      </span>
+      <div className="flex items-center gap-1">
+        {/* Prev */}
+        <button
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage <= 1}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-text-tertiary hover:bg-glass-hover hover:text-text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+
+        {/* Page numbers */}
+        {pages.map((p, i) =>
+          p === "..." ? (
+            <span key={`dots-${i}`} className="w-8 h-8 flex items-center justify-center text-text-disabled text-[12px]">
+              ...
+            </span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onPageChange(p)}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center text-[12px] font-medium transition-colors ${
+                p === currentPage
+                  ? "bg-primary text-white"
+                  : "text-text-tertiary hover:bg-glass-hover hover:text-text-primary"
+              }`}
+            >
+              {p}
+            </button>
+          )
+        )}
+
+        {/* Next */}
+        <button
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage >= totalPages}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-text-tertiary hover:bg-glass-hover hover:text-text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }

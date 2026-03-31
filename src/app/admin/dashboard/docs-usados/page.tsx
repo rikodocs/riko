@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import PersonCard, { Person } from "@/components/PersonCard";
+
+const PER_PAGE = 20;
 
 export default function DocsUsadosPage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => { loadDocs(); }, []);
 
@@ -32,6 +35,17 @@ export default function DocsUsadosPage() {
     (p) => p.name?.toLowerCase().includes(search.toLowerCase()) || p.cpf?.includes(search)
   );
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+  const paginatedPeople = useMemo(() => {
+    const start = (currentPage - 1) * PER_PAGE;
+    return filtered.slice(start, start + PER_PAGE);
+  }, [filtered, currentPage]);
+
+  useEffect(() => { setCurrentPage(1); }, [search]);
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(Math.max(1, totalPages));
+  }, [filtered.length, totalPages, currentPage]);
+
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center gap-4">
@@ -43,6 +57,17 @@ export default function DocsUsadosPage() {
         </div>
         <span className="text-[11px] text-text-disabled font-mono">{filtered.length} usados</span>
       </div>
+
+      {/* Pagination top */}
+      {filtered.length > PER_PAGE && (
+        <PaginationBar
+          currentPage={currentPage}
+          totalPages={totalPages}
+          total={filtered.length}
+          perPage={PER_PAGE}
+          onPageChange={setCurrentPage}
+        />
+      )}
 
       {loading ? (
         <div className="space-y-3">
@@ -59,7 +84,7 @@ export default function DocsUsadosPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((person, i) => (
+          {paginatedPeople.map((person, i) => (
             <PersonCard
               key={person.id}
               person={person}
@@ -72,6 +97,92 @@ export default function DocsUsadosPage() {
           ))}
         </div>
       )}
+
+      {/* Pagination bottom */}
+      {filtered.length > PER_PAGE && (
+        <PaginationBar
+          currentPage={currentPage}
+          totalPages={totalPages}
+          total={filtered.length}
+          perPage={PER_PAGE}
+          onPageChange={setCurrentPage}
+        />
+      )}
+    </div>
+  );
+}
+
+function PaginationBar({
+  currentPage,
+  totalPages,
+  total,
+  perPage,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  total: number;
+  perPage: number;
+  onPageChange: (p: number) => void;
+}) {
+  const start = (currentPage - 1) * perPage + 1;
+  const end = Math.min(currentPage * perPage, total);
+
+  const pages: (number | "...")[] = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (currentPage > 3) pages.push("...");
+    for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+      pages.push(i);
+    }
+    if (currentPage < totalPages - 2) pages.push("...");
+    pages.push(totalPages);
+  }
+
+  return (
+    <div className="glass-static rounded-2xl px-5 py-3 flex items-center justify-between gap-4 flex-wrap">
+      <span className="text-text-disabled text-[12px] font-mono">
+        {start}-{end} de {total}
+      </span>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage <= 1}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-text-tertiary hover:bg-glass-hover hover:text-text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        {pages.map((p, i) =>
+          p === "..." ? (
+            <span key={`dots-${i}`} className="w-8 h-8 flex items-center justify-center text-text-disabled text-[12px]">...</span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onPageChange(p)}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center text-[12px] font-medium transition-colors ${
+                p === currentPage
+                  ? "bg-primary text-white"
+                  : "text-text-tertiary hover:bg-glass-hover hover:text-text-primary"
+              }`}
+            >
+              {p}
+            </button>
+          )
+        )}
+        <button
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage >= totalPages}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-text-tertiary hover:bg-glass-hover hover:text-text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }

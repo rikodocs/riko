@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import PersonCard, { Person } from "@/components/PersonCard";
 import JSZip from "jszip";
+
+const PER_PAGE = 20;
 
 export default function DocsPage() {
   const [people, setPeople] = useState<Person[]>([]);
@@ -12,6 +14,7 @@ export default function DocsPage() {
   const [batchQty, setBatchQty] = useState("");
   const [exporting, setExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => { loadDocs(); }, []);
 
@@ -32,7 +35,6 @@ export default function DocsPage() {
     setPeople((prev) => prev.filter((p) => p.id !== personId));
   }
 
-  // Generate clean filename from person name
   function cleanFileName(name: string, index: number, ext: string, total: number) {
     const clean = (name || "documento")
       .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -54,7 +56,6 @@ export default function DocsPage() {
     setExportMsg(null);
 
     try {
-      // Pick first N people (ordered by created_at ascending)
       const batch = people.slice(0, qty);
       const zip = new JSZip();
       let downloadCount = 0;
@@ -82,17 +83,13 @@ export default function DocsPage() {
         return;
       }
 
-      // Generate ZIP
       const zipBlob = await zip.generateAsync({ type: "blob" });
-
-      // Format date: DDMMYY
       const now = new Date();
       const dd = String(now.getDate()).padStart(2, "0");
       const mm = String(now.getMonth() + 1).padStart(2, "0");
       const yy = String(now.getFullYear()).slice(-2);
       const zipName = `${qty}docs${dd}${mm}${yy}.zip`;
 
-      // Download ZIP
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement("a");
       a.href = url;
@@ -102,13 +99,11 @@ export default function DocsPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      // Mark all as used
       for (const person of batch) {
         await supabase.from("people").update({ used: true }).eq("id", person.id);
         await supabase.from("documents").update({ status: "used" }).eq("person_id", person.id);
       }
 
-      // Remove from list
       const batchIds = new Set(batch.map((p) => p.id));
       setPeople((prev) => prev.filter((p) => !batchIds.has(p.id)));
 
@@ -125,6 +120,22 @@ export default function DocsPage() {
   const filtered = people.filter(
     (p) => p.name?.toLowerCase().includes(search.toLowerCase()) || p.cpf?.includes(search)
   );
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+  const paginatedPeople = useMemo(() => {
+    const start = (currentPage - 1) * PER_PAGE;
+    return filtered.slice(start, start + PER_PAGE);
+  }, [filtered, currentPage]);
+
+  // Reset page when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  // Adjust page if it's out of bounds
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(Math.max(1, totalPages));
+  }, [filtered.length, totalPages, currentPage]);
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -187,6 +198,17 @@ export default function DocsPage() {
         </div>
       )}
 
+      {/* Pagination top */}
+      {filtered.length > PER_PAGE && (
+        <PaginationBar
+          currentPage={currentPage}
+          totalPages={totalPages}
+          total={filtered.length}
+          perPage={PER_PAGE}
+          onPageChange={setCurrentPage}
+        />
+      )}
+
       {loading ? (
         <div className="space-y-3">
           {[1,2,3].map(i => <div key={i} className="glass-static rounded-2xl p-5 animate-shimmer h-20" />)}
@@ -202,7 +224,7 @@ export default function DocsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((person, i) => (
+          {paginatedPeople.map((person, i) => (
             <PersonCard
               key={person.id}
               person={person}
@@ -215,6 +237,93 @@ export default function DocsPage() {
           ))}
         </div>
       )}
+
+      {/* Pagination bottom */}
+      {filtered.length > PER_PAGE && (
+        <PaginationBar
+          currentPage={currentPage}
+          totalPages={totalPages}
+          total={filtered.length}
+          perPage={PER_PAGE}
+          onPageChange={setCurrentPage}
+        />
+      )}
+    </div>
+  );
+}
+
+// Reusable pagination component
+function PaginationBar({
+  currentPage,
+  totalPages,
+  total,
+  perPage,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  total: number;
+  perPage: number;
+  onPageChange: (p: number) => void;
+}) {
+  const start = (currentPage - 1) * perPage + 1;
+  const end = Math.min(currentPage * perPage, total);
+
+  const pages: (number | "...")[] = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (currentPage > 3) pages.push("...");
+    for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+      pages.push(i);
+    }
+    if (currentPage < totalPages - 2) pages.push("...");
+    pages.push(totalPages);
+  }
+
+  return (
+    <div className="glass-static rounded-2xl px-5 py-3 flex items-center justify-between gap-4 flex-wrap">
+      <span className="text-text-disabled text-[12px] font-mono">
+        {start}-{end} de {total}
+      </span>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage <= 1}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-text-tertiary hover:bg-glass-hover hover:text-text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        {pages.map((p, i) =>
+          p === "..." ? (
+            <span key={`dots-${i}`} className="w-8 h-8 flex items-center justify-center text-text-disabled text-[12px]">...</span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onPageChange(p)}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center text-[12px] font-medium transition-colors ${
+                p === currentPage
+                  ? "bg-primary text-white"
+                  : "text-text-tertiary hover:bg-glass-hover hover:text-text-primary"
+              }`}
+            >
+              {p}
+            </button>
+          )
+        )}
+        <button
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage >= totalPages}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-text-tertiary hover:bg-glass-hover hover:text-text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }
