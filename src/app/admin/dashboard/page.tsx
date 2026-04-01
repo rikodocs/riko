@@ -254,21 +254,29 @@ export default function DashboardPage() {
   };
 
   async function loadStats() {
-    // Count documents for pending and manual_review
-    const { data: docs } = await supabase.from("documents").select("status");
-    const pending = docs?.filter((d) => d.status === "pending").length || 0;
-    const manual_review = docs?.filter((d) => d.status === "manual_review").length || 0;
+    // Use count queries directly in the database (avoids 1000-row default limit)
+    const { count: pendingCount } = await supabase
+      .from("documents")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending");
 
-    // Count PEOPLE (not documents) for consulted and used
+    const { count: manualReviewCount } = await supabase
+      .from("documents")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "manual_review");
+
     const { count: consultedCount } = await supabase
       .from("people")
       .select("id", { count: "exact", head: true })
       .eq("used", false);
+
     const { count: usedCount } = await supabase
       .from("people")
       .select("id", { count: "exact", head: true })
       .eq("used", true);
 
+    const pending = pendingCount || 0;
+    const manual_review = manualReviewCount || 0;
     const consulted = consultedCount || 0;
     const used = usedCount || 0;
 
