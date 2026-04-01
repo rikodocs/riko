@@ -15,6 +15,7 @@ export default function ImportsPage() {
   const [dragActive, setDragActive] = useState(false);
   const [recentDocs, setRecentDocs] = useState<DocRecord[]>([]);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [progress, setProgress] = useState<{ current: number; total: number; failed: number } | null>(null);
 
   useEffect(() => {
     loadRecentDocs();
@@ -42,85 +43,89 @@ export default function ImportsPage() {
 
     setUploading(true);
     setMessage(null);
+    setProgress({ current: 0, total: validFiles.length, failed: 0 });
     let successCount = 0;
-    const errors: string[] = [];
-
+    let failedCount = 0;
     const skippedDuplicates: string[] = [];
 
     try {
-      for (const file of validFiles) {
-        // Check duplicate only among pending documents (same name + pending = likely re-import)
-        // Documents already consulted/used with the same name are NOT considered duplicates
-        const { count: nameCount } = await supabase
-          .from("documents")
-          .select("id", { count: "exact", head: true })
-          .eq("file_name", file.name)
-          .eq("status", "pending");
+      for (let fi = 0; fi < validFiles.length; fi++) {
+        const file = validFiles[fi];
+        setProgress({ current: fi + 1, total: validFiles.length, failed: failedCount });
 
-        if (nameCount && nameCount > 0) {
-          skippedDuplicates.push(file.name);
-          continue;
-        }
+        try {
+          // Check duplicate by original file name across ALL documents
+          const { count: nameCount } = await supabase
+            .from("documents")
+            .select("id", { count: "exact", head: true })
+            .eq("file_name", file.name);
 
-        const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
-        const baseName = file.name
-          .replace(/\.[^.]+$/, "")
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .replace(/[^a-zA-Z0-9]/g, "_")
-          .replace(/_+/g, "_")
-          .replace(/^_|_$/g, "")
-          || "doc";
-        const fileName = `${Date.now()}_${baseName}.${ext}`;
+          if (nameCount && nameCount > 0) {
+            skippedDuplicates.push(file.name);
+            continue;
+          }
 
-        const { error: uploadError } = await supabase.storage
-          .from("documents")
-          .upload(fileName, file);
+          const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
+          const baseName = file.name
+            .replace(/\.[^.]+$/, "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-zA-Z0-9]/g, "_")
+            .replace(/_+/g, "_")
+            .replace(/^_|_$/g, "")
+            || "doc";
+          const fileName = `${Date.now()}_${fi}_${baseName}.${ext}`;
 
-        if (uploadError) {
-          errors.push(`Upload "${file.name}": ${uploadError.message}`);
-          continue;
-        }
+          const { error: uploadError } = await supabase.storage
+            .from("documents")
+            .upload(fileName, file);
 
-        const { data: urlData } = supabase.storage
-          .from("documents")
-          .getPublicUrl(fileName);
+          if (uploadError) {
+            failedCount++;
+            continue;
+          }
 
-        const { error: insertError } = await supabase.from("documents").insert({
-          file_name: file.name,
-          file_path: fileName,
-          file_url: urlData.publicUrl,
-          file_type: file.type,
-          status: "pending",
-        });
+          const { data: urlData } = supabase.storage
+            .from("documents")
+            .getPublicUrl(fileName);
 
-        if (insertError) {
-          errors.push(`Banco "${file.name}": ${insertError.message}`);
-        } else {
-          successCount++;
+          const { error: insertError } = await supabase.from("documents").insert({
+            file_name: file.name,
+            file_path: fileName,
+            file_url: urlData.publicUrl,
+            file_type: file.type,
+            status: "pending",
+          });
+
+          if (insertError) {
+            failedCount++;
+          } else {
+            successCount++;
+          }
+        } catch {
+          failedCount++;
         }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      errors.push(`Erro inesperado: ${msg}`);
+      setMessage({ type: "error", text: `Erro inesperado: ${msg}` });
     }
 
     setUploading(false);
-    if (successCount > 0 || skippedDuplicates.length > 0) {
-      const parts: string[] = [];
-      if (successCount > 0) parts.push(`${successCount} documento(s) importado(s) com sucesso!`);
-      if (skippedDuplicates.length > 0) parts.push(`${skippedDuplicates.length} ignorado(s) por nome duplicado.`);
+    setProgress(null);
+
+    const parts: string[] = [];
+    if (successCount > 0) parts.push(`${successCount} importado(s)`);
+    if (skippedDuplicates.length > 0) parts.push(`${skippedDuplicates.length} duplicado(s)`);
+    if (failedCount > 0) parts.push(`${failedCount} falha(s) no upload`);
+
+    if (parts.length > 0) {
       setMessage({
-        type: successCount > 0 ? "success" : "error",
-        text: parts.join(" "),
-      });
-      if (successCount > 0) loadRecentDocs();
-    } else {
-      setMessage({
-        type: "error",
-        text: errors.length > 0 ? errors.join(" | ") : "Falha ao importar documentos.",
+        type: failedCount > 0 && successCount === 0 ? "error" : successCount > 0 ? "success" : "error",
+        text: parts.join(" | "),
       });
     }
+    if (successCount > 0) loadRecentDocs();
   }, []);
 
   // Paste support (Ctrl+V)
@@ -227,6 +232,27 @@ export default function ImportsPage() {
           </label>
         </div>
       </div>
+
+      {/* Progress bar */}
+      {progress && (
+        <div className="glass-static rounded-2xl p-5 animate-fade-in">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-text-secondary text-[13px] font-medium">
+              Enviando {progress.current} de {progress.total}...
+            </span>
+            <span className="text-text-disabled text-[11px] font-mono">
+              {Math.round((progress.current / progress.total) * 100)}%
+              {progress.failed > 0 && <span className="text-danger ml-2">({progress.failed} falha{progress.failed > 1 ? "s" : ""})</span>}
+            </span>
+          </div>
+          <div className="w-full h-2 bg-surface-0 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary rounded-full transition-all duration-300"
+              style={{ width: `${(progress.current / progress.total) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Message */}
       {message && (
