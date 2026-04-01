@@ -48,6 +48,57 @@ export default function ImportsPage() {
     let failedCount = 0;
     const skippedDuplicates: string[] = [];
 
+    // Helper: upload a single file with retry logic
+    async function uploadWithRetry(file: File, index: number, maxRetries = 3): Promise<boolean> {
+      const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
+      const baseName = file.name
+        .replace(/\.[^.]+$/, "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9]/g, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_|_$/g, "")
+        || "doc";
+      const fileName = `${Date.now()}_${index}_${baseName}.${ext}`;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const { error: uploadError } = await supabase.storage
+            .from("documents")
+            .upload(fileName, file);
+
+          if (uploadError) {
+            if (attempt < maxRetries) {
+              await new Promise(r => setTimeout(r, 1000 * attempt));
+              continue;
+            }
+            return false;
+          }
+
+          const { data: urlData } = supabase.storage
+            .from("documents")
+            .getPublicUrl(fileName);
+
+          const { error: insertError } = await supabase.from("documents").insert({
+            file_name: file.name,
+            file_path: fileName,
+            file_url: urlData.publicUrl,
+            file_type: file.type,
+            status: "pending",
+          });
+
+          return !insertError;
+        } catch {
+          if (attempt < maxRetries) {
+            await new Promise(r => setTimeout(r, 1000 * attempt));
+            continue;
+          }
+          return false;
+        }
+      }
+      return false;
+    }
+
     try {
       for (let fi = 0; fi < validFiles.length; fi++) {
         const file = validFiles[fi];
@@ -65,45 +116,19 @@ export default function ImportsPage() {
             continue;
           }
 
-          const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
-          const baseName = file.name
-            .replace(/\.[^.]+$/, "")
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .replace(/[^a-zA-Z0-9]/g, "_")
-            .replace(/_+/g, "_")
-            .replace(/^_|_$/g, "")
-            || "doc";
-          const fileName = `${Date.now()}_${fi}_${baseName}.${ext}`;
-
-          const { error: uploadError } = await supabase.storage
-            .from("documents")
-            .upload(fileName, file);
-
-          if (uploadError) {
-            failedCount++;
-            continue;
-          }
-
-          const { data: urlData } = supabase.storage
-            .from("documents")
-            .getPublicUrl(fileName);
-
-          const { error: insertError } = await supabase.from("documents").insert({
-            file_name: file.name,
-            file_path: fileName,
-            file_url: urlData.publicUrl,
-            file_type: file.type,
-            status: "pending",
-          });
-
-          if (insertError) {
-            failedCount++;
-          } else {
+          const ok = await uploadWithRetry(file, fi);
+          if (ok) {
             successCount++;
+          } else {
+            failedCount++;
           }
         } catch {
           failedCount++;
+        }
+
+        // Small delay every 10 files to avoid overwhelming Supabase
+        if ((fi + 1) % 10 === 0 && fi + 1 < validFiles.length) {
+          await new Promise(r => setTimeout(r, 200));
         }
       }
     } catch (err) {
