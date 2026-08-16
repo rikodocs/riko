@@ -9,14 +9,7 @@ export interface ConsultaSettings {
   api_token?: string | null;
 }
 
-export interface ConsultaResult {
-  ok: boolean;
-  message: string;
-  duplicate?: boolean;
-  personId?: string;
-}
-
-interface PersonFields {
+export interface PersonFields {
   name: string | null;
   birth_date: string | null;
   mother_name: string | null;
@@ -28,6 +21,22 @@ interface PersonFields {
   state: string | null;
   score: string | null;
   income: string | null;
+}
+
+export interface ConsultaResult {
+  ok: boolean;
+  message: string;
+  duplicate?: boolean;
+  personId?: string;
+}
+
+export interface LookupResult {
+  ok: boolean;
+  message: string;
+  duplicate?: boolean;
+  fields?: PersonFields;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  rawData?: any;
 }
 
 // URL fixa, sem token. Não é configurável em Configurações porque não
@@ -137,14 +146,66 @@ function parseSupremo(apiData: any): PersonFields | null {
   };
 }
 
-// Looks up a CPF against the configured provider (OwnData or Supremo dos 7),
-// creates the `people` row, and updates every document in docIds accordingly.
-// Used both by the admin batch review flow and the viewer accept flow.
-export async function consultarPessoaPorCPF(
+// Checks whether a CPF is already registered, and if not, looks it up
+// against the configured provider (OwnData or Supremo dos 7). Doesn't write
+// anything — used to preview data before the viewer confirms it's really
+// that person.
+export async function buscarDadosCPF(
+  supabase: SupabaseClient,
+  cpf: string,
+  settings: ConsultaSettings
+): Promise<LookupResult> {
+  const { data: existingPerson } = await supabase
+    .from("people")
+    .select("id, name, used")
+    .eq("cpf", cpf)
+    .single();
+
+  if (existingPerson) {
+    return {
+      ok: false,
+      duplicate: true,
+      message: `CPF já cadastrado: ${existingPerson.name || "sem nome"}`,
+    };
+  }
+
+  const provider: ApiProvider = settings.api_provider === "supremo" ? "supremo" : "owndata";
+
+  const apiUrl =
+    provider === "supremo"
+      ? `${SUPREMO_BASE_URL}${cpf}`
+      : `${settings.api_url}?token=${settings.api_token}&modulo=cpf&consulta=${cpf}`;
+
+  const apiRes = await fetch(apiUrl, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!apiRes.ok) {
+    return { ok: false, message: `API retornou status ${apiRes.status}` };
+  }
+
+  const apiData = await apiRes.json();
+  const fields = provider === "supremo" ? parseSupremo(apiData) : parseOwnData(apiData);
+
+  if (!fields) {
+    return { ok: false, message: "CPF não encontrado na API." };
+  }
+
+  return { ok: true, message: "Dados encontrados.", fields, rawData: apiData };
+}
+
+// Persists a person already looked up via buscarDadosCPF (fields/rawData
+// supplied by the caller) and updates every document in docIds accordingly.
+// Re-checks for a duplicate right before inserting, in case the CPF got
+// registered by someone else between the lookup and this confirmation.
+export async function salvarPessoaConsultada(
   supabase: SupabaseClient,
   cpf: string,
   docIds: string[],
-  settings: ConsultaSettings
+  fields: PersonFields,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  rawData: any
 ): Promise<ConsultaResult> {
   const { data: existingPerson } = await supabase
     .from("people")
@@ -166,40 +227,10 @@ export async function consultarPessoaPorCPF(
     };
   }
 
-  const provider: ApiProvider = settings.api_provider === "supremo" ? "supremo" : "owndata";
-
-  const apiUrl =
-    provider === "supremo"
-      ? `${SUPREMO_BASE_URL}${cpf}`
-      : `${settings.api_url}?token=${settings.api_token}&modulo=cpf&consulta=${cpf}`;
-
-  const apiRes = await fetch(apiUrl, {
-    method: "GET",
-    headers: { Accept: "application/json" },
-  });
-
-  if (!apiRes.ok) {
-    for (const dId of docIds) {
-      await supabase.from("documents").update({ status: "error" }).eq("id", dId);
-    }
-    return { ok: false, message: `API retornou status ${apiRes.status}` };
-  }
-
-  const apiData = await apiRes.json();
-
-  const fields = provider === "supremo" ? parseSupremo(apiData) : parseOwnData(apiData);
-
-  if (!fields) {
-    for (const dId of docIds) {
-      await supabase.from("documents").update({ status: "error" }).eq("id", dId);
-    }
-    return { ok: false, message: "CPF não encontrado na API." };
-  }
-
   const personData = {
     cpf,
     ...fields,
-    raw_data: apiData,
+    raw_data: rawData,
     used: false,
   };
 
@@ -228,4 +259,27 @@ export async function consultarPessoaPorCPF(
     message: `${personData.name || "Pessoa"} registrado com sucesso!`,
     personId: newPerson.id,
   };
+}
+
+// Looks up a CPF and immediately persists it in one shot (lookup + save).
+// Used by the admin batch review flow, which doesn't have a preview step.
+export async function consultarPessoaPorCPF(
+  supabase: SupabaseClient,
+  cpf: string,
+  docIds: string[],
+  settings: ConsultaSettings
+): Promise<ConsultaResult> {
+  const lookup = await buscarDadosCPF(supabase, cpf, settings);
+
+  if (!lookup.ok || !lookup.fields) {
+    for (const dId of docIds) {
+      await supabase
+        .from("documents")
+        .update(lookup.duplicate ? { status: "duplicate", cpf_extracted: cpf } : { status: "error" })
+        .eq("id", dId);
+    }
+    return { ok: false, duplicate: lookup.duplicate, message: lookup.message };
+  }
+
+  return salvarPessoaConsultada(supabase, cpf, docIds, lookup.fields, lookup.rawData);
 }

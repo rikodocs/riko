@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
-import { consultarPessoaPorCPF } from "@/lib/consulta";
+import { salvarPessoaConsultada, type PersonFields } from "@/lib/consulta";
+
+interface CpfEntry {
+  cpf: string;
+  fields: PersonFields;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  rawData: any;
+}
 
 interface CpfResult {
   cpf: string;
@@ -13,13 +20,13 @@ export async function POST(request: Request) {
   try {
     const supabase = createServerClient();
     const body = await request.json();
-    const { viewerId, documentId, cpfs } = body as {
+    const { viewerId, documentId, entries } = body as {
       viewerId?: string;
       documentId?: string;
-      cpfs?: string[];
+      entries?: CpfEntry[];
     };
 
-    if (!viewerId || !documentId || !Array.isArray(cpfs) || cpfs.length === 0) {
+    if (!viewerId || !documentId || !Array.isArray(entries) || entries.length === 0) {
       return NextResponse.json({ error: "Dados incompletos." }, { status: 400 });
     }
 
@@ -39,26 +46,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Documento já foi processado." }, { status: 409 });
     }
 
-    const { data: settings, error: settingsError } = await supabase
-      .from("settings")
-      .select("*")
-      .eq("id", 1)
-      .single();
-
-    const providerReady =
-      settings?.api_provider === "supremo" || (!!settings?.api_url && !!settings?.api_token);
-    if (settingsError || !providerReady) {
-      return NextResponse.json({ error: "API de consulta não configurada." }, { status: 400 });
-    }
-
-    // Um documento (ex: PDF de várias páginas) pode ter mais de uma pessoa —
-    // processa cada CPF informado e registra cada tentativa no histórico,
-    // pra o admin poder ver depois quem confirmou o quê.
+    // Os dados já foram buscados e mostrados pro viewer confirmar em
+    // /api/viewer/consultar-preview — aqui só grava, re-checando duplicado
+    // por segurança (pode ter mudado entre a prévia e a confirmação).
     const results: CpfResult[] = [];
-    for (const cpf of cpfs) {
-      const result = await consultarPessoaPorCPF(supabase, cpf, [documentId], settings);
+    for (const entry of entries) {
+      const result = await salvarPessoaConsultada(
+        supabase,
+        entry.cpf,
+        [documentId],
+        entry.fields,
+        entry.rawData
+      );
       results.push({
-        cpf,
+        cpf: entry.cpf,
         ok: result.ok,
         duplicate: result.duplicate ?? false,
         message: result.message,
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
       await supabase.from("document_reviews").insert({
         document_id: documentId,
         viewer_id: viewerId,
-        cpf,
+        cpf: entry.cpf,
         action: "accepted",
         person_id: result.personId ?? null,
       });
@@ -75,9 +76,10 @@ export async function POST(request: Request) {
     const anySuccess = results.some((r) => r.ok);
     if (!anySuccess) {
       const anyDuplicate = results.some((r) => r.duplicate);
-      return NextResponse.json({ error: results[0]?.message, duplicate: anyDuplicate, results }, {
-        status: anyDuplicate ? 409 : 400,
-      });
+      return NextResponse.json(
+        { error: results[0]?.message, duplicate: anyDuplicate, results },
+        { status: anyDuplicate ? 409 : 400 }
+      );
     }
 
     return NextResponse.json({ ok: true, results });

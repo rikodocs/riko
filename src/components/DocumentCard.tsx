@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { formatCPFInput, isValidCPF } from "@/lib/cpf";
+import type { PersonFields } from "@/lib/consulta";
 
 interface DocumentCardDoc {
   id: string;
@@ -22,21 +23,37 @@ interface CpfRowState {
   checking: boolean;
 }
 
+interface PreviewEntry {
+  cpf: string;
+  ok: boolean;
+  duplicate: boolean;
+  message: string;
+  fields: PersonFields | null;
+}
+
 const MAX_CPF_ROWS = 6;
 
 function emptyRow(): CpfRowState {
   return { value: "", duplicate: false, checking: false };
 }
 
+function formatCpfDisplay(digits: string): string {
+  return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+}
+
 export default function DocumentCard({ doc, viewerId, viewerName, onDone }: DocumentCardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [rows, setRows] = useState<CpfRowState[]>([emptyRow()]);
-  const [submitting, setSubmitting] = useState<"accept" | "reject" | null>(null);
+  const [submitting, setSubmitting] = useState<"preview" | "save" | "reject" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pageNum, setPageNum] = useState(1);
   const [numPages, setNumPages] = useState(1);
   const [confirmed, setConfirmed] = useState(false);
+  const [previewResults, setPreviewResults] = useState<PreviewEntry[] | null>(null);
+  // Guarda o raw_data que veio da prévia pra reenviar na confirmação, sem
+  // precisar consultar a API de novo (nem expor isso na tela).
+  const rawDataByCpfRef = useRef<Record<string, unknown>>({});
 
   const cpfCheckIdRef = useRef<number[]>([]);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
@@ -53,6 +70,8 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
     setPageNum(1);
     setNumPages(1);
     setConfirmed(false);
+    setPreviewResults(null);
+    rawDataByCpfRef.current = {};
     pdfDocRef.current = null;
     fileBlobRef.current = null;
     loadDocument();
@@ -161,7 +180,12 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
 
     const page = await pdf.getPage(pageNumber);
     if (isCancelled()) return;
-    const viewport = page.getViewport({ scale: 1.5 });
+    // Escala alta o bastante pra dar pra dar zoom na página (Ctrl + / pinça)
+    // e continuar legível — em telas de alta densidade (celular) usa mais
+    // pixels ainda.
+    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    const scale = 2.5 * Math.min(dpr, 2);
+    const viewport = page.getViewport({ scale });
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     const ctx = canvas.getContext("2d")!;
@@ -237,15 +261,62 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
   );
   const canAccept = validRows.length > 0 && allValidRowsOk;
 
-  async function handleAccept() {
+  // Passo 1: busca os dados na API (sem gravar nada ainda) e mostra pra
+  // conferir se é mesmo a pessoa certa antes de salvar.
+  async function handlePreview() {
     if (!canAccept) return;
-    setSubmitting("accept");
+    setSubmitting("preview");
     setError(null);
     const cpfs = validRows.map((r) => r.value.replace(/\D/g, ""));
-    const res = await fetch("/api/viewer/aceitar", {
+    const res = await fetch("/api/viewer/consultar-preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ viewerId, documentId: doc.id, cpfs }),
+    });
+    const responseBody = await res.json();
+    setSubmitting(null);
+    if (!res.ok) {
+      setError(responseBody.error || "Erro ao consultar.");
+      return;
+    }
+    const results = (responseBody.results || []) as Array<{
+      cpf: string;
+      ok: boolean;
+      duplicate: boolean;
+      message: string;
+      fields: PersonFields | null;
+      rawData: unknown;
+    }>;
+    for (const r of results) {
+      rawDataByCpfRef.current[r.cpf] = r.rawData;
+    }
+    setPreviewResults(
+      results.map((r) => ({ cpf: r.cpf, ok: r.ok, duplicate: r.duplicate, message: r.message, fields: r.fields }))
+    );
+  }
+
+  function handleBackToEdit() {
+    setPreviewResults(null);
+    rawDataByCpfRef.current = {};
+    setError(null);
+  }
+
+  // Passo 2: só agora grava de fato — o viewer já viu os dados e confirmou.
+  async function handleConfirmSave() {
+    if (!previewResults) return;
+    const okEntries = previewResults.filter((r) => r.ok && r.fields);
+    if (okEntries.length === 0) return;
+    setSubmitting("save");
+    setError(null);
+    const entries = okEntries.map((r) => ({
+      cpf: r.cpf,
+      fields: r.fields as PersonFields,
+      rawData: rawDataByCpfRef.current[r.cpf] ?? null,
+    }));
+    const res = await fetch("/api/viewer/aceitar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerId, documentId: doc.id, entries }),
     });
     const responseBody = await res.json();
     setSubmitting(null);
@@ -345,6 +416,64 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
           </svg>
           Documento confirmado — Baixar e continuar
         </button>
+      ) : previewResults ? (
+        <>
+          <div className="flex flex-col gap-3">
+            <label className="text-text-secondary text-xs uppercase tracking-[0.15em] font-medium">
+              Confira antes de salvar
+            </label>
+
+            {previewResults.map((r) => (
+              <div
+                key={r.cpf}
+                className={`rounded-md border p-3 space-y-1 ${
+                  r.ok ? "border-surface-border bg-surface-1" : "border-danger/40 bg-danger-muted"
+                }`}
+              >
+                <p className="mono-input text-xs text-text-tertiary">{formatCpfDisplay(r.cpf)}</p>
+                {r.ok && r.fields ? (
+                  <>
+                    <p className="text-text-primary text-sm font-semibold">{r.fields.name || "Nome não informado"}</p>
+                    <p className="text-text-secondary text-xs">
+                      {r.fields.birth_date ? `Nascimento: ${r.fields.birth_date}` : "Nascimento não informado"}
+                    </p>
+                    {r.fields.phones.length > 0 && (
+                      <p className="text-text-secondary text-xs">Telefone(s): {r.fields.phones.join(", ")}</p>
+                    )}
+                    {r.fields.income && <p className="text-text-secondary text-xs">Renda: {r.fields.income}</p>}
+                  </>
+                ) : (
+                  <p className="text-danger text-xs font-medium">{r.message}</p>
+                )}
+              </div>
+            ))}
+
+            {previewResults.every((r) => !r.ok) && (
+              <p className="text-danger text-xs font-medium">
+                Nenhum CPF pôde ser confirmado. Volte e corrija antes de tentar de novo.
+              </p>
+            )}
+
+            {error && <p className="text-danger text-xs font-medium">{error}</p>}
+          </div>
+
+          <div className="flex gap-4">
+            <button
+              onClick={handleBackToEdit}
+              disabled={submitting !== null}
+              className="flex-1 py-3 rounded-md border border-surface-border text-text-secondary font-semibold disabled:opacity-40"
+            >
+              Voltar e corrigir
+            </button>
+            <button
+              onClick={handleConfirmSave}
+              disabled={submitting !== null || previewResults.every((r) => !r.ok)}
+              className="flex-1 py-3 rounded-md bg-primary text-on-primary font-semibold disabled:opacity-40"
+            >
+              {submitting === "save" ? "Salvando..." : "Confirmar e salvar"}
+            </button>
+          </div>
+        </>
       ) : (
         <>
           <div className="flex flex-col gap-3">
@@ -413,11 +542,11 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
               Recusar
             </button>
             <button
-              onClick={handleAccept}
+              onClick={handlePreview}
               disabled={!canAccept || submitting !== null}
               className="flex-1 py-3 rounded-md bg-primary text-on-primary font-semibold disabled:opacity-40"
             >
-              Aceitar
+              {submitting === "preview" ? "Consultando..." : "Aceitar"}
             </button>
           </div>
         </>
