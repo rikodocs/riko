@@ -2,7 +2,7 @@ import { SupabaseClient } from "@supabase/supabase-js";
 
 export interface ConsultaSettings {
   api_url: string;
-  api_token: string;
+  api_token?: string;
 }
 
 export interface ConsultaResult {
@@ -40,7 +40,10 @@ export async function consultarPessoaPorCPF(
     };
   }
 
-  const apiUrl = `${settings.api_url}?token=${settings.api_token}&modulo=cpf&consulta=${cpf}`;
+  // API atual: URL fixa (configurada em Configurações como settings.api_url,
+  // já terminando em "...&cpf="), sem token — só concatena o CPF no final.
+  // Ex: https://supremodoseteoriginal.com/?action=consultar_cpf_automatico&cpf=
+  const apiUrl = `${settings.api_url}${cpf}`;
   const apiRes = await fetch(apiUrl, {
     method: "GET",
     headers: { Accept: "application/json" },
@@ -57,74 +60,38 @@ export async function consultarPessoaPorCPF(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api = apiData as any;
 
-  const basicos = api.DadosBasicos || {};
-  const economicos = api.DadosEconomicos || {};
-
-  const phones: string[] = [];
-  if (Array.isArray(api.telefones)) {
-    for (const t of api.telefones) {
-      const num = t?.telefone || t?.numero || t?.fone || t?.celular;
-      if (num && String(num).trim()) phones.push(String(num).trim());
+  if (!api.success || !api.dados) {
+    for (const dId of docIds) {
+      await supabase.from("documents").update({ status: "error" }).eq("id", dId);
     }
+    return { ok: false, message: "CPF não encontrado na API." };
   }
 
-  const emails: string[] = [];
-  if (Array.isArray(api.emails)) {
-    for (const e of api.emails) {
-      const val = typeof e === "string" ? e : e?.email || e?.valor;
-      if (val && String(val).trim()) emails.push(String(val).trim());
-    }
-  }
+  const dados = api.dados || {};
 
-  const addresses: string[] = [];
-  if (Array.isArray(api.enderecos)) {
-    for (const addr of api.enderecos) {
-      if (typeof addr === "string") {
-        if (addr.trim()) addresses.push(addr.trim());
-      } else if (addr && typeof addr === "object") {
-        const parts = [
-          addr.tipoLogradouro
-            ? `${addr.tipoLogradouro} ${addr.logradouro || ""}`.trim()
-            : addr.logradouro || "",
-          addr.logradouroNumero || addr.numero || "",
-          addr.complemento || "",
-          addr.bairro || "",
-          addr.cidade || addr.municipio || "",
-          addr.uf || addr.estado || "",
-          addr.cep || "",
-        ]
-          .map((v: string) => (typeof v === "string" ? v.trim() : ""))
-          .filter(Boolean);
-        if (parts.length > 0) addresses.push(parts.join(", "));
-      }
-    }
-  }
+  // Essa API só retorna nome, nascimento, sexo, renda e telefones — sem
+  // e-mail, endereço, profissão ou score. Preenche só o que vem, o resto
+  // fica em branco (o cadastro continua funcionando normalmente).
+  const phones: string[] = Array.isArray(api.telefones)
+    ? api.telefones.map((t: unknown) => String(t).trim()).filter(Boolean)
+    : [];
 
-  const profObj = api.profissao || {};
-  const professionRaw = profObj.cboDescricao || profObj.descricao || profObj.cargo || "";
-  const profession =
-    typeof professionRaw === "string" && professionRaw.trim() && professionRaw !== "Sem descrição."
-      ? professionRaw.trim()
-      : null;
-
-  const scoreObj = economicos.score || {};
-  const scoreVal = scoreObj.scoreCSB || scoreObj.scoreCSBA || economicos.score_credito || "";
-
-  const firstAddr = Array.isArray(api.enderecos) && api.enderecos[0] ? api.enderecos[0] : {};
+  const birthDateRaw = dados.NASC ? String(dados.NASC).trim() : "";
+  const birthDate = birthDateRaw ? birthDateRaw.split(" ")[0] : null;
 
   const personData = {
     cpf,
-    name: basicos.nome || api.nome || null,
-    birth_date: basicos.dataNascimento || basicos.data_nascimento || api.dataNascimento || null,
-    mother_name: basicos.nomeMae || basicos.nome_mae || api.nomeMae || null,
-    profession,
+    name: dados.NOME || null,
+    birth_date: birthDate,
+    mother_name: null,
+    profession: null,
     phones,
-    emails,
-    addresses,
-    city: firstAddr.cidade || firstAddr.municipio || basicos.municipioNascimento || null,
-    state: firstAddr.uf || firstAddr.estado || null,
-    score: scoreVal ? String(scoreVal) : null,
-    income: economicos.renda || economicos.renda_presumida || api.renda || null,
+    emails: [] as string[],
+    addresses: [] as string[],
+    city: null,
+    state: null,
+    score: null,
+    income: dados.RENDA || null,
     raw_data: apiData,
     used: false,
   };

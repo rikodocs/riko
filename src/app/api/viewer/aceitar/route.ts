@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       .eq("id", 1)
       .single();
 
-    if (settingsError || !settings?.api_url || !settings?.api_token) {
+    if (settingsError || !settings?.api_url) {
       return NextResponse.json({ error: "API de consulta não configurada." }, { status: 400 });
     }
 
