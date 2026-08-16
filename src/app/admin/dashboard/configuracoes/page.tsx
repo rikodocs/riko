@@ -46,7 +46,7 @@ export default function ConfiguracoesPage() {
 
   return (
     <div className="max-w-2xl animate-fade-in">
-      <div className="glass-static rounded-2xl p-6 space-y-6">
+      <div className="glass-static rounded-lg p-6 space-y-6">
         <div>
           <h2 className="text-[15px] font-semibold text-text-primary"
               style={{ fontFamily: "var(--font-heading)" }}>

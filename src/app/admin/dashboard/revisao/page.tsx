@@ -247,12 +247,12 @@ export default function RevisaoPage() {
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="glass-static rounded-2xl p-5 animate-shimmer h-48" />
+            <div key={i} className="glass-static rounded-lg p-5 animate-shimmer h-48" />
           ))}
         </div>
       ) : docs.length === 0 ? (
-        <div className="glass-static rounded-2xl p-12 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-success-muted mx-auto mb-4 flex items-center justify-center">
+        <div className="glass-static rounded-lg p-12 text-center">
+          <div className="w-14 h-14 rounded-lg bg-success-muted mx-auto mb-4 flex items-center justify-center">
             <svg className="w-6 h-6 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
@@ -273,7 +273,7 @@ export default function RevisaoPage() {
             return (
               <div
                 key={doc.id}
-                className="glass-static rounded-2xl overflow-hidden stagger-item"
+                className="glass-static rounded-lg overflow-hidden stagger-item"
                 style={{ animationDelay: `${i * 50}ms` }}
               >
                 <div className="flex flex-col lg:flex-row">
@@ -302,7 +302,7 @@ export default function RevisaoPage() {
                       </div>
                     )}
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                      <div className="bg-black/70 backdrop-blur-sm rounded-xl px-4 py-2 flex items-center gap-2 text-white text-xs font-medium">
+                      <div className="bg-black/70 backdrop-blur-sm rounded-md px-4 py-2 flex items-center gap-2 text-white text-xs font-medium">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
                         </svg>
@@ -332,7 +332,7 @@ export default function RevisaoPage() {
                           <summary className="text-[11px] text-text-disabled cursor-pointer hover:text-text-tertiary transition-colors">
                             Texto extraído pelo OCR
                           </summary>
-                          <pre className="mt-2 bg-surface-0 rounded-xl border border-surface-border p-3 text-[10px] text-text-tertiary overflow-auto max-h-32 font-mono whitespace-pre-wrap">
+                          <pre className="mt-2 bg-surface-0 rounded-md border border-surface-border p-3 text-[10px] text-text-tertiary overflow-auto max-h-32 font-mono whitespace-pre-wrap">
                             {doc.extracted_text}
                           </pre>
                         </details>
@@ -466,7 +466,7 @@ function PaginationBar({
   }
 
   return (
-    <div className="glass-static rounded-2xl px-5 py-3 flex items-center justify-between gap-4 flex-wrap">
+    <div className="glass-static rounded-lg px-5 py-3 flex items-center justify-between gap-4 flex-wrap">
       <span className="text-text-disabled text-[12px] font-mono">
         {start}-{end} de {total}
       </span>

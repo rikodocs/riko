@@ -512,7 +512,7 @@ export default function DashboardPage() {
         {statCards.map((card, i) => (
           <div
             key={card.label}
-            className={`glass-static rounded-2xl p-5 stagger-item`}
+            className={`glass-static rounded-lg p-5 stagger-item`}
             style={{ animationDelay: `${i * 60}ms` }}
           >
             <p className="text-text-tertiary text-[11px] uppercase tracking-[0.1em] font-medium mb-2"
@@ -528,7 +528,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Consultar Section */}
-      <div className="glass-static rounded-2xl p-6">
+      <div className="glass-static rounded-lg p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
           <div>
             <h2 className="text-[15px] font-semibold text-text-primary"
@@ -566,7 +566,7 @@ export default function DashboardPage() {
             {notifications.map((note, i) => (
               <div
                 key={i}
-                className="bg-warning-muted border border-warning/20 text-warning px-4 py-2.5 rounded-xl text-xs font-medium animate-fade-in"
+                className="bg-warning-muted border border-warning/20 text-warning px-4 py-2.5 rounded-md text-xs font-medium animate-fade-in"
               >
                 {note}
               </div>
@@ -576,7 +576,7 @@ export default function DashboardPage() {
 
         {/* Console Log */}
         {consultLog.length > 0 && (
-          <div className="bg-surface-0 rounded-xl border border-surface-border p-4 max-h-80 overflow-y-auto font-mono text-[11px] leading-relaxed space-y-0.5">
+          <div className="bg-surface-0 rounded-md border border-surface-border p-4 max-h-80 overflow-y-auto font-mono text-[11px] leading-relaxed space-y-0.5">
             {consultLog.map((line, i) => (
               <div
                 key={i}

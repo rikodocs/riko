@@ -209,12 +209,12 @@ export default function ImportsPage() {
         onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
         onDragLeave={() => setDragActive(false)}
         onDrop={handleDrop}
-        className={`glass-static rounded-2xl p-12 text-center transition-all duration-200 ${
+        className={`glass-static rounded-lg p-12 text-center transition-all duration-200 ${
           dragActive ? "border-primary bg-primary-muted !border-primary" : ""
         }`}
       >
         <div className="flex flex-col items-center gap-4">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-colors ${
+          <div className={`w-14 h-14 rounded-lg flex items-center justify-center transition-colors ${
             dragActive ? "bg-primary-muted" : "bg-glass"
           }`}>
             <svg
@@ -260,7 +260,7 @@ export default function ImportsPage() {
 
       {/* Progress bar */}
       {progress && (
-        <div className="glass-static rounded-2xl p-5 animate-fade-in">
+        <div className="glass-static rounded-lg p-5 animate-fade-in">
           <div className="flex items-center justify-between mb-2">
             <span className="text-text-secondary text-[13px] font-medium">
               Enviando {progress.current} de {progress.total}...
@@ -282,7 +282,7 @@ export default function ImportsPage() {
       {/* Message */}
       {message && (
         <div
-          className={`px-4 py-3 rounded-xl text-xs font-medium animate-fade-in ${
+          className={`px-4 py-3 rounded-md text-xs font-medium animate-fade-in ${
             message.type === "success"
               ? "bg-success-muted text-success border border-success/20"
               : "bg-danger-muted text-danger border border-danger/20"
@@ -293,7 +293,7 @@ export default function ImportsPage() {
       )}
 
       {/* Recent imports */}
-      <div className="glass-static rounded-2xl overflow-hidden">
+      <div className="glass-static rounded-lg overflow-hidden">
         <div className="px-5 py-4 border-b border-surface-border">
           <h2 className="text-[13px] font-semibold text-text-primary"
               style={{ fontFamily: "var(--font-heading)" }}>

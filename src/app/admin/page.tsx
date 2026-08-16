@@ -83,7 +83,7 @@ export default function AdminLoginPage() {
         </div>
 
         {/* Login card */}
-        <div className="glass-static rounded-2xl p-8 flex flex-col items-center gap-6 min-w-[340px]">
+        <div className="glass-static rounded-lg p-8 flex flex-col items-center gap-6 min-w-[340px]">
           <div className="flex flex-col items-center gap-1">
             <p
               className="text-text-secondary text-xs uppercase tracking-[0.2em] font-medium"
@@ -110,7 +110,7 @@ export default function AdminLoginPage() {
                 onKeyDown={(e) => handleKeyDown(index, e)}
                 disabled={loading}
                 aria-label={`Dígito ${index + 1} do PIN`}
-                className={`w-12 h-14 text-center text-xl font-mono rounded-xl bg-surface-1 border transition-all duration-200 pin-input ${
+                className={`w-12 h-14 text-center text-xl font-mono rounded-md bg-surface-1 border transition-all duration-200 pin-input ${
                   error
                     ? "border-danger text-danger glow-danger"
                     : "border-surface-border text-text-primary"

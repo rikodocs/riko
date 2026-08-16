@@ -152,7 +152,7 @@ export default function DocsPage() {
 
       {/* Batch export */}
       {people.length > 0 && (
-        <div className="glass-static rounded-2xl px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+        <div className="glass-static rounded-lg px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="flex items-center gap-2">
             <svg className="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -211,11 +211,11 @@ export default function DocsPage() {
 
       {loading ? (
         <div className="space-y-3">
-          {[1,2,3].map(i => <div key={i} className="glass-static rounded-2xl p-5 animate-shimmer h-20" />)}
+          {[1,2,3].map(i => <div key={i} className="glass-static rounded-lg p-5 animate-shimmer h-20" />)}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="glass-static rounded-2xl p-12 text-center">
-          <div className="w-12 h-12 rounded-2xl bg-glass mx-auto mb-3 flex items-center justify-center">
+        <div className="glass-static rounded-lg p-12 text-center">
+          <div className="w-12 h-12 rounded-lg bg-glass mx-auto mb-3 flex items-center justify-center">
             <svg className="w-5 h-5 text-text-disabled" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
@@ -283,7 +283,7 @@ function PaginationBar({
   }
 
   return (
-    <div className="glass-static rounded-2xl px-5 py-3 flex items-center justify-between gap-4 flex-wrap">
+    <div className="glass-static rounded-lg px-5 py-3 flex items-center justify-between gap-4 flex-wrap">
       <span className="text-text-disabled text-[12px] font-mono">
         {start}-{end} de {total}
       </span>

@@ -150,7 +150,7 @@ export default function DashboardLayout({
                 key={item.href}
                 href={item.href}
                 onClick={() => setSidebarOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200 group ${
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-[13px] font-medium transition-all duration-200 group ${
                   active
                     ? "bg-primary-muted text-primary glow-sm"
                     : "text-text-tertiary hover:text-text-primary hover:bg-glass-hover"
@@ -170,7 +170,7 @@ export default function DashboardLayout({
           <div className="mx-1 mb-3 h-px bg-surface-border" />
           <button
             onClick={handleLogout}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium text-text-tertiary hover:text-danger hover:bg-danger-muted transition-all duration-200 w-full"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-md text-[13px] font-medium text-text-tertiary hover:text-danger hover:bg-danger-muted transition-all duration-200 w-full"
           >
             <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />

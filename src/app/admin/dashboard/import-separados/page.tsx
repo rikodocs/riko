@@ -424,12 +424,12 @@ export default function ImportSeparadosPage() {
         onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
         onDragLeave={() => setDragActive(false)}
         onDrop={handleDrop}
-        className={`glass-static rounded-2xl p-8 text-center transition-all duration-200 ${
+        className={`glass-static rounded-lg p-8 text-center transition-all duration-200 ${
           dragActive ? "border-primary bg-primary-muted !border-primary" : ""
         }`}
       >
         <div className="flex flex-col items-center gap-3">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-colors ${
+          <div className={`w-14 h-14 rounded-lg flex items-center justify-center transition-colors ${
             dragActive ? "bg-primary-muted" : "bg-glass"
           }`}>
             <svg
@@ -465,7 +465,7 @@ export default function ImportSeparadosPage() {
 
       {/* Message */}
       {message && (
-        <div className={`px-4 py-3 rounded-xl text-xs font-medium animate-fade-in ${
+        <div className={`px-4 py-3 rounded-md text-xs font-medium animate-fade-in ${
           message.type === "success"
             ? "bg-success-muted text-success border border-success/20"
             : "bg-danger-muted text-danger border border-danger/20"
@@ -476,7 +476,7 @@ export default function ImportSeparadosPage() {
 
       {/* Staged Files (not grouped yet) */}
       {stagedFiles.length > 0 && (
-        <div className="glass-static rounded-2xl overflow-hidden">
+        <div className="glass-static rounded-lg overflow-hidden">
           <div className="px-5 py-4 border-b border-surface-border flex items-center justify-between">
             <div className="flex items-center gap-3">
               <h2 className="text-[13px] font-semibold text-text-primary"
@@ -514,7 +514,7 @@ export default function ImportSeparadosPage() {
               <div
                 key={sf.id}
                 onClick={() => toggleSelect(sf.id)}
-                className={`relative rounded-xl overflow-hidden cursor-pointer transition-all duration-200 group ${
+                className={`relative rounded-md overflow-hidden cursor-pointer transition-all duration-200 group ${
                   sf.selected
                     ? "ring-2 ring-primary bg-primary-muted scale-[0.97]"
                     : "ring-1 ring-surface-border hover:ring-text-tertiary"
@@ -622,7 +622,7 @@ export default function ImportSeparadosPage() {
           {groups.map((group) => (
             <div
               key={group.id}
-              className={`glass-static rounded-2xl overflow-hidden transition-all ${
+              className={`glass-static rounded-lg overflow-hidden transition-all ${
                 group.status === "done"
                   ? "ring-1 ring-success/30"
                   : group.status === "error"
@@ -681,7 +681,7 @@ export default function ImportSeparadosPage() {
               {/* Group Files */}
               <div className="p-4 flex gap-3 overflow-x-auto">
                 {group.files.map((sf) => (
-                  <div key={sf.id} className="relative rounded-xl overflow-hidden shrink-0 w-28 ring-1 ring-surface-border group">
+                  <div key={sf.id} className="relative rounded-md overflow-hidden shrink-0 w-28 ring-1 ring-surface-border group">
                     {/* Remove from group */}
                     {group.status === "pending" && (
                       <button
@@ -728,7 +728,7 @@ export default function ImportSeparadosPage() {
 
       {/* Empty state */}
       {stagedFiles.length === 0 && groups.length === 0 && (
-        <div className="glass-static rounded-2xl p-10 text-center">
+        <div className="glass-static rounded-lg p-10 text-center">
           <p className="text-text-tertiary text-sm">
             Importe arquivos e agrupe os que pertencem a mesma pessoa.
           </p>
@@ -746,7 +746,7 @@ export default function ImportSeparadosPage() {
         >
           <button
             onClick={() => setPreviewUrl(null)}
-            className="absolute top-4 right-4 z-10 w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+            className="absolute top-4 right-4 z-10 w-10 h-10 rounded-md bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
           >
             <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />

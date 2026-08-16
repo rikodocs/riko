@@ -287,7 +287,7 @@ export default function FiltrosPage() {
 
       {/* Filters panel */}
       {showFilters && (
-        <div className="glass-static rounded-2xl p-5 animate-fade-in">
+        <div className="glass-static rounded-lg p-5 animate-fade-in">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {/* Search */}
             <FilterInput
@@ -305,7 +305,7 @@ export default function FiltrosPage() {
               <select
                 value={filters.state}
                 onChange={(e) => updateFilter("state", e.target.value)}
-                className="w-full bg-surface-0 border border-surface-border rounded-xl px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
+                className="w-full bg-surface-0 border border-surface-border rounded-md px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
               >
                 <option value="">Todos os estados</option>
                 {STATES.filter(Boolean).map((s) => (
@@ -338,7 +338,7 @@ export default function FiltrosPage() {
               <select
                 value={filters.usedStatus}
                 onChange={(e) => updateFilter("usedStatus", e.target.value as Filters["usedStatus"])}
-                className="w-full bg-surface-0 border border-surface-border rounded-xl px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
+                className="w-full bg-surface-0 border border-surface-border rounded-md px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
               >
                 <option value="all">Todos</option>
                 <option value="not_used">Disponíveis</option>
@@ -357,14 +357,14 @@ export default function FiltrosPage() {
                   value={filters.scoreMin}
                   onChange={(e) => updateFilter("scoreMin", e.target.value)}
                   placeholder="Mín"
-                  className="w-1/2 bg-surface-0 border border-surface-border rounded-xl px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
+                  className="w-1/2 bg-surface-0 border border-surface-border rounded-md px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
                 />
                 <input
                   type="number"
                   value={filters.scoreMax}
                   onChange={(e) => updateFilter("scoreMax", e.target.value)}
                   placeholder="Máx"
-                  className="w-1/2 bg-surface-0 border border-surface-border rounded-xl px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
+                  className="w-1/2 bg-surface-0 border border-surface-border rounded-md px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
                 />
               </div>
             </div>
@@ -380,14 +380,14 @@ export default function FiltrosPage() {
                   value={filters.incomeMin}
                   onChange={(e) => updateFilter("incomeMin", e.target.value)}
                   placeholder="Mín"
-                  className="w-1/2 bg-surface-0 border border-surface-border rounded-xl px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
+                  className="w-1/2 bg-surface-0 border border-surface-border rounded-md px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
                 />
                 <input
                   type="number"
                   value={filters.incomeMax}
                   onChange={(e) => updateFilter("incomeMax", e.target.value)}
                   placeholder="Máx"
-                  className="w-1/2 bg-surface-0 border border-surface-border rounded-xl px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
+                  className="w-1/2 bg-surface-0 border border-surface-border rounded-md px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
                 />
               </div>
             </div>
@@ -400,7 +400,7 @@ export default function FiltrosPage() {
               <select
                 value={filters.hasPhone}
                 onChange={(e) => updateFilter("hasPhone", e.target.value as Filters["hasPhone"])}
-                className="w-full bg-surface-0 border border-surface-border rounded-xl px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
+                className="w-full bg-surface-0 border border-surface-border rounded-md px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
               >
                 <option value="all">Todos</option>
                 <option value="yes">Com telefone</option>
@@ -416,7 +416,7 @@ export default function FiltrosPage() {
               <select
                 value={filters.hasEmail}
                 onChange={(e) => updateFilter("hasEmail", e.target.value as Filters["hasEmail"])}
-                className="w-full bg-surface-0 border border-surface-border rounded-xl px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
+                className="w-full bg-surface-0 border border-surface-border rounded-md px-3 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-primary/50 transition-colors"
               >
                 <option value="all">Todos</option>
                 <option value="yes">Com e-mail</option>
@@ -433,7 +433,7 @@ export default function FiltrosPage() {
           <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="glass-static rounded-2xl p-12 text-center">
+        <div className="glass-static rounded-lg p-12 text-center">
           <svg className="w-12 h-12 mx-auto text-text-disabled mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
           </svg>
@@ -506,7 +506,7 @@ function FilterInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-surface-0 border border-surface-border rounded-xl px-3 py-2.5 text-[13px] text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-primary/50 transition-colors"
+        className="w-full bg-surface-0 border border-surface-border rounded-md px-3 py-2.5 text-[13px] text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-primary/50 transition-colors"
       />
     </div>
   );
@@ -515,7 +515,7 @@ function FilterInput({
 // Stat card
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <div className="glass-static rounded-2xl p-4">
+    <div className="glass-static rounded-lg p-4">
       <span className="text-text-disabled text-[10px] uppercase tracking-wider font-medium">
         {label}
       </span>
