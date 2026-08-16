@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { gerarCodigo6Digitos } from "@/lib/codigo-acesso";
 
@@ -10,6 +10,14 @@ interface ViewerUserRow {
   name: string;
   active: boolean;
   pending_count: number;
+}
+
+interface HistoryRow {
+  id: string;
+  cpf: string | null;
+  action: "accepted" | "rejected";
+  created_at: string;
+  documents: { file_name: string } | null;
 }
 
 export default function UsuariosPage() {
@@ -22,6 +30,9 @@ export default function UsuariosPage() {
   const [assignAmount, setAssignAmount] = useState("");
   const [assigning, setAssigning] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<string | null>(null);
+  const [historyRows, setHistoryRows] = useState<HistoryRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -116,6 +127,24 @@ export default function UsuariosPage() {
     loadAvailableCount();
   }
 
+  async function handleToggleHistory(userId: string) {
+    if (historyTarget === userId) {
+      setHistoryTarget(null);
+      return;
+    }
+    setHistoryTarget(userId);
+    setHistoryLoading(true);
+    const { data } = await supabase
+      .from("document_reviews")
+      .select("id, cpf, action, created_at, documents(file_name)")
+      .eq("viewer_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setHistoryRows((data as any) || []);
+    setHistoryLoading(false);
+  }
+
   return (
     <div className="max-w-3xl animate-fade-in flex flex-col gap-6">
       <div className="glass-static rounded-lg p-6 space-y-4">
@@ -160,52 +189,100 @@ export default function UsuariosPage() {
                 <th className="p-4">Em mãos</th>
                 <th className="p-4">Status</th>
                 <th className="p-4"></th>
+                <th className="p-4"></th>
               </tr>
             </thead>
             <tbody>
               {users.map((u) => (
-                <tr key={u.id} className="border-b border-surface-border last:border-0">
-                  <td className="p-4 text-text-primary">{u.name}</td>
-                  <td className="p-4 font-mono text-text-secondary">{u.code}</td>
-                  <td className="p-4 text-text-secondary">{u.pending_count}</td>
-                  <td className="p-4">
-                    <button
-                      onClick={() => handleToggleActive(u)}
-                      className={`badge ${u.active ? "badge-success" : "badge-danger"}`}
-                    >
-                      {u.active ? "Ativo" : "Inativo"}
-                    </button>
-                  </td>
-                  <td className="p-4">
-                    {assignTarget === u.id ? (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={1}
-                          max={availableCount}
-                          value={assignAmount}
-                          onChange={(e) => setAssignAmount(e.target.value)}
-                          className="input-base w-20 mono-input"
-                          placeholder="qtd"
-                        />
-                        <button
-                          onClick={() => handleAssign(u.id)}
-                          disabled={assigning}
-                          className="btn-primary text-xs px-3 py-1.5"
-                        >
-                          Confirmar
-                        </button>
-                        <button onClick={() => setAssignTarget(null)} className="btn-ghost text-xs px-3 py-1.5">
-                          Cancelar
-                        </button>
-                      </div>
-                    ) : (
-                      <button onClick={() => setAssignTarget(u.id)} className="btn-ghost text-xs px-3 py-1.5">
-                        Atribuir
+                <Fragment key={u.id}>
+                  <tr className="border-b border-surface-border last:border-0">
+                    <td className="p-4 text-text-primary">{u.name}</td>
+                    <td className="p-4 font-mono text-text-secondary">{u.code}</td>
+                    <td className="p-4 text-text-secondary">{u.pending_count}</td>
+                    <td className="p-4">
+                      <button
+                        onClick={() => handleToggleActive(u)}
+                        className={`badge ${u.active ? "badge-success" : "badge-danger"}`}
+                      >
+                        {u.active ? "Ativo" : "Inativo"}
                       </button>
-                    )}
-                  </td>
-                </tr>
+                    </td>
+                    <td className="p-4">
+                      {assignTarget === u.id ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            max={availableCount}
+                            value={assignAmount}
+                            onChange={(e) => setAssignAmount(e.target.value)}
+                            className="input-base w-20 mono-input"
+                            placeholder="qtd"
+                          />
+                          <button
+                            onClick={() => handleAssign(u.id)}
+                            disabled={assigning}
+                            className="btn-primary text-xs px-3 py-1.5"
+                          >
+                            Confirmar
+                          </button>
+                          <button onClick={() => setAssignTarget(null)} className="btn-ghost text-xs px-3 py-1.5">
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setAssignTarget(u.id)} className="btn-ghost text-xs px-3 py-1.5">
+                          Atribuir
+                        </button>
+                      )}
+                    </td>
+                    <td className="p-4">
+                      <button onClick={() => handleToggleHistory(u.id)} className="btn-ghost text-xs px-3 py-1.5">
+                        {historyTarget === u.id ? "Fechar histórico" : "Histórico"}
+                      </button>
+                    </td>
+                  </tr>
+                  {historyTarget === u.id && (
+                    <tr className="border-b border-surface-border last:border-0">
+                      <td colSpan={6} className="p-4 bg-surface-0">
+                        {historyLoading ? (
+                          <p className="text-text-tertiary text-xs">Carregando histórico...</p>
+                        ) : historyRows.length === 0 ? (
+                          <p className="text-text-tertiary text-xs">Nenhum documento revisado por esse usuário ainda.</p>
+                        ) : (
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-left text-text-tertiary uppercase tracking-wider">
+                                <th className="pb-2 pr-4">Documento</th>
+                                <th className="pb-2 pr-4">CPF</th>
+                                <th className="pb-2 pr-4">Ação</th>
+                                <th className="pb-2">Quando</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {historyRows.map((h) => (
+                                <tr key={h.id} className="border-t border-surface-border">
+                                  <td className="py-2 pr-4 text-text-secondary">
+                                    {h.documents?.file_name || "—"}
+                                  </td>
+                                  <td className="py-2 pr-4 font-mono text-text-secondary">{h.cpf || "—"}</td>
+                                  <td className="py-2 pr-4">
+                                    <span className={`badge ${h.action === "accepted" ? "badge-success" : "badge-danger"}`}>
+                                      {h.action === "accepted" ? "Aceito" : "Rejeitado"}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 text-text-tertiary">
+                                    {new Date(h.created_at).toLocaleString("pt-BR")}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>

@@ -13,6 +13,7 @@ export interface ConsultaResult {
   ok: boolean;
   message: string;
   duplicate?: boolean;
+  personId?: string;
 }
 
 interface PersonFields {
@@ -222,5 +223,9 @@ export async function consultarPessoaPorCPF(
       .eq("id", dId);
   }
 
-  return { ok: true, message: `${personData.name || "Pessoa"} registrado com sucesso!` };
+  return {
+    ok: true,
+    message: `${personData.name || "Pessoa"} registrado com sucesso!`,
+    personId: newPerson.id,
+  };
 }

@@ -2,17 +2,24 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
 import { consultarPessoaPorCPF } from "@/lib/consulta";
 
+interface CpfResult {
+  cpf: string;
+  ok: boolean;
+  duplicate: boolean;
+  message: string;
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = createServerClient();
     const body = await request.json();
-    const { viewerId, documentId, cpf } = body as {
+    const { viewerId, documentId, cpfs } = body as {
       viewerId?: string;
       documentId?: string;
-      cpf?: string;
+      cpfs?: string[];
     };
 
-    if (!viewerId || !documentId || !cpf) {
+    if (!viewerId || !documentId || !Array.isArray(cpfs) || cpfs.length === 0) {
       return NextResponse.json({ error: "Dados incompletos." }, { status: 400 });
     }
 
@@ -44,16 +51,36 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "API de consulta não configurada." }, { status: 400 });
     }
 
-    const result = await consultarPessoaPorCPF(supabase, cpf, [documentId], settings);
-
-    if (!result.ok) {
-      return NextResponse.json(
-        { error: result.message, duplicate: result.duplicate ?? false },
-        { status: result.duplicate ? 409 : 400 }
-      );
+    // Um documento (ex: PDF de várias páginas) pode ter mais de uma pessoa —
+    // processa cada CPF informado e registra cada tentativa no histórico,
+    // pra o admin poder ver depois quem confirmou o quê.
+    const results: CpfResult[] = [];
+    for (const cpf of cpfs) {
+      const result = await consultarPessoaPorCPF(supabase, cpf, [documentId], settings);
+      results.push({
+        cpf,
+        ok: result.ok,
+        duplicate: result.duplicate ?? false,
+        message: result.message,
+      });
+      await supabase.from("document_reviews").insert({
+        document_id: documentId,
+        viewer_id: viewerId,
+        cpf,
+        action: "accepted",
+        person_id: result.personId ?? null,
+      });
     }
 
-    return NextResponse.json({ ok: true });
+    const anySuccess = results.some((r) => r.ok);
+    if (!anySuccess) {
+      const anyDuplicate = results.some((r) => r.duplicate);
+      return NextResponse.json({ error: results[0]?.message, duplicate: anyDuplicate, results }, {
+        status: anyDuplicate ? 409 : 400,
+      });
+    }
+
+    return NextResponse.json({ ok: true, results });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Erro interno";
     return NextResponse.json({ error: message }, { status: 500 });

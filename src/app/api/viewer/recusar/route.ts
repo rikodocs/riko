@@ -5,7 +5,11 @@ export async function POST(request: Request) {
   try {
     const supabase = createServerClient();
     const body = await request.json();
-    const { viewerId, documentId } = body as { viewerId?: string; documentId?: string };
+    const { viewerId, documentId, cpf } = body as {
+      viewerId?: string;
+      documentId?: string;
+      cpf?: string;
+    };
 
     if (!viewerId || !documentId) {
       return NextResponse.json({ error: "Dados incompletos." }, { status: 400 });
@@ -35,6 +39,13 @@ export async function POST(request: Request) {
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
+
+    await supabase.from("document_reviews").insert({
+      document_id: documentId,
+      viewer_id: viewerId,
+      cpf: cpf || null,
+      action: "rejected",
+    });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

@@ -16,30 +16,51 @@ interface DocumentCardProps {
   onDone: () => void;
 }
 
+interface CpfRowState {
+  value: string;
+  duplicate: boolean;
+  checking: boolean;
+}
+
+const MAX_CPF_ROWS = 6;
+
+function emptyRow(): CpfRowState {
+  return { value: "", duplicate: false, checking: false };
+}
+
 export default function DocumentCard({ doc, viewerId, viewerName, onDone }: DocumentCardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [cpf, setCpf] = useState("");
-  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
-  const [duplicate, setDuplicate] = useState(false);
+  const [rows, setRows] = useState<CpfRowState[]>([emptyRow()]);
   const [submitting, setSubmitting] = useState<"accept" | "reject" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const cpfCheckIdRef = useRef(0);
+  const [pageNum, setPageNum] = useState(1);
+  const [numPages, setNumPages] = useState(1);
+  const [confirmed, setConfirmed] = useState(false);
+
+  const cpfCheckIdRef = useRef<number[]>([]);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
+  const renderTokenRef = useRef(0);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pdfDocRef = useRef<any>(null);
+  const fileBlobRef = useRef<Blob | null>(null);
 
   useEffect(() => {
-    setCpf("");
-    setDuplicate(false);
+    setRows([emptyRow()]);
+    cpfCheckIdRef.current = [];
     setError(null);
     setLoadError(null);
-    let cancelled = false;
-    renderDocument(() => cancelled);
+    setPageNum(1);
+    setNumPages(1);
+    setConfirmed(false);
+    pdfDocRef.current = null;
+    fileBlobRef.current = null;
+    loadDocument();
     return () => {
-      cancelled = true;
-      // Stop pdf.js from continuing to paint into the (possibly reused or
-      // resized) canvas after this effect has been superseded — checking
-      // `cancelled` after an await only skips our own code, it doesn't stop
-      // paint calls the RenderTask already has in flight.
+      // Invalidate any in-flight async work from this doc.id (loadDocument,
+      // renderPdfPage) and stop pdf.js from continuing to paint into the
+      // (possibly reused or resized) canvas.
+      renderTokenRef.current++;
       renderTaskRef.current?.cancel();
       renderTaskRef.current = null;
     };
@@ -67,7 +88,9 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
     ctx.restore();
   }
 
-  async function renderDocument(isCancelled: () => boolean) {
+  async function loadDocument() {
+    const token = ++renderTokenRef.current;
+    const isCancelled = () => token !== renderTokenRef.current;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -79,6 +102,7 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
     }
     const blob = await res.blob();
     if (isCancelled()) return;
+    fileBlobRef.current = blob;
 
     if (doc.file_type === "application/pdf") {
       const arrayBuffer = await blob.arrayBuffer();
@@ -102,32 +126,11 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
       } as any).promise;
       if (isCancelled()) return;
 
-      const page = await pdf.getPage(1);
-      const viewport = page.getViewport({ scale: 1.5 });
-      if (isCancelled()) return;
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      const ctx = canvas.getContext("2d")!;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const renderTask = page.render({ canvasContext: ctx, viewport } as any);
-      renderTaskRef.current = renderTask;
-      try {
-        await renderTask.promise;
-      } catch (err) {
-        // pdf.js throws a RenderingCancelledException when .cancel() is
-        // called from the effect cleanup — that's expected, not a real error.
-        if (isCancelled()) return;
-        // A genuine render failure (bad PDF, decode error). renderDocument
-        // is invoked as a bare async call from the effect, so rethrowing
-        // here would just become an unhandled promise rejection — surface
-        // it the same way the other error paths in this component do.
-        setLoadError("Não foi possível carregar o documento.");
-        return;
-      }
-      renderTaskRef.current = null;
-      if (isCancelled()) return;
-      drawWatermark(ctx, canvas.width, canvas.height);
+      pdfDocRef.current = pdf;
+      setNumPages(pdf.numPages);
+      await renderPdfPage(1, isCancelled);
     } else {
+      setNumPages(1);
       const url = URL.createObjectURL(blob);
       const img = new Image();
       img.onload = () => {
@@ -151,56 +154,121 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
     }
   }
 
-  async function handleCpfChange(value: string) {
+  async function renderPdfPage(pageNumber: number, isCancelled: () => boolean) {
+    const canvas = canvasRef.current;
+    const pdf = pdfDocRef.current;
+    if (!canvas || !pdf) return;
+
+    const page = await pdf.getPage(pageNumber);
+    if (isCancelled()) return;
+    const viewport = page.getViewport({ scale: 1.5 });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext("2d")!;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const renderTask = page.render({ canvasContext: ctx, viewport } as any);
+    renderTaskRef.current = renderTask;
+    try {
+      await renderTask.promise;
+    } catch (err) {
+      // pdf.js throws a RenderingCancelledException when .cancel() is called
+      // — that's expected, not a real error.
+      if (isCancelled()) return;
+      setLoadError("Não foi possível carregar a página do documento.");
+      return;
+    }
+    renderTaskRef.current = null;
+    if (isCancelled()) return;
+    drawWatermark(ctx, canvas.width, canvas.height);
+  }
+
+  async function goToPage(nextPage: number) {
+    if (nextPage < 1 || nextPage > numPages || !pdfDocRef.current) return;
+    renderTaskRef.current?.cancel();
+    renderTaskRef.current = null;
+    const token = ++renderTokenRef.current;
+    setPageNum(nextPage);
+    await renderPdfPage(nextPage, () => token !== renderTokenRef.current);
+  }
+
+  function updateRow(index: number, patch: Partial<CpfRowState>) {
+    setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+  }
+
+  async function handleCpfChange(index: number, value: string) {
     const formatted = formatCPFInput(value);
-    setCpf(formatted);
-    setDuplicate(false);
+    updateRow(index, { value: formatted, duplicate: false });
     setError(null);
 
     const digits = formatted.replace(/\D/g, "");
     if (digits.length === 11 && isValidCPF(formatted)) {
-      const checkId = ++cpfCheckIdRef.current;
-      setCheckingDuplicate(true);
+      cpfCheckIdRef.current[index] = (cpfCheckIdRef.current[index] || 0) + 1;
+      const checkId = cpfCheckIdRef.current[index];
+      updateRow(index, { checking: true });
       const { data, error: queryError } = await supabase
         .from("people")
         .select("id")
         .eq("cpf", digits)
         .single();
-      // Ignore this response if the CPF field has moved on since this check
-      // was issued (a newer keystroke superseded it).
-      if (checkId !== cpfCheckIdRef.current) return;
-      setCheckingDuplicate(false);
-      // PGRST116 = "no rows returned", which is the expected/normal result
-      // of .single() when the CPF isn't registered yet — not a failure.
+      // Ignore this response if the row moved on since this check was issued.
+      if (checkId !== cpfCheckIdRef.current[index]) return;
+      updateRow(index, { checking: false });
+      // PGRST116 = "no rows returned", the expected/normal result when the
+      // CPF isn't registered yet — not a failure.
       if (queryError && queryError.code !== "PGRST116") {
-        // A real query failure (network/DB error) — leave duplicate state
-        // as-is rather than confidently asserting "not duplicate". The
-        // server re-validates authoritatively on submit either way.
         return;
       }
-      setDuplicate(!!data);
+      updateRow(index, { duplicate: !!data });
     }
   }
 
-  const digits = cpf.replace(/\D/g, "");
-  const cpfComplete = digits.length === 11 && isValidCPF(cpf);
-  const canAccept = cpfComplete && !duplicate && !checkingDuplicate;
+  function addRow() {
+    setRows((prev) => (prev.length >= MAX_CPF_ROWS ? prev : [...prev, emptyRow()]));
+  }
+
+  function removeRow(index: number) {
+    setRows((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
+    cpfCheckIdRef.current.splice(index, 1);
+  }
+
+  const validRows = rows.filter((r) => r.value.replace(/\D/g, "").length > 0);
+  const allValidRowsOk = validRows.every(
+    (r) => r.value.replace(/\D/g, "").length === 11 && isValidCPF(r.value) && !r.duplicate && !r.checking
+  );
+  const canAccept = validRows.length > 0 && allValidRowsOk;
 
   async function handleAccept() {
     if (!canAccept) return;
     setSubmitting("accept");
     setError(null);
+    const cpfs = validRows.map((r) => r.value.replace(/\D/g, ""));
     const res = await fetch("/api/viewer/aceitar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ viewerId, documentId: doc.id, cpf: digits }),
+      body: JSON.stringify({ viewerId, documentId: doc.id, cpfs }),
     });
     const responseBody = await res.json();
     setSubmitting(null);
     if (!res.ok) {
-      if (responseBody.duplicate) setDuplicate(true);
       setError(responseBody.error || "Erro ao confirmar.");
       return;
+    }
+    setConfirmed(true);
+  }
+
+  function handleDownloadAndContinue() {
+    const blob = fileBlobRef.current;
+    if (blob) {
+      const ext =
+        doc.file_type === "application/pdf" ? "pdf" : (doc.file_type || "").split("/")[1] || "bin";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `documento-${doc.id}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     }
     onDone();
   }
@@ -208,10 +276,13 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
   async function handleReject() {
     setSubmitting("reject");
     setError(null);
+    const firstCpf = rows
+      .map((r) => r.value.replace(/\D/g, ""))
+      .find((digits) => digits.length === 11);
     const res = await fetch("/api/viewer/recusar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ viewerId, documentId: doc.id }),
+      body: JSON.stringify({ viewerId, documentId: doc.id, cpf: firstCpf }),
     });
     setSubmitting(null);
     if (!res.ok) {
@@ -240,39 +311,117 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
         )}
       </div>
 
-      <div className="flex flex-col gap-2">
-        <label className="text-text-secondary text-xs uppercase tracking-[0.15em] font-medium">
-          CPF visível no documento
-        </label>
-        <input
-          type="text"
-          inputMode="numeric"
-          value={cpf}
-          onChange={(e) => handleCpfChange(e.target.value)}
-          placeholder="000.000.000-00"
-          className="input-base mono-input w-full"
-          disabled={submitting !== null}
-        />
-        {duplicate && <p className="text-danger text-xs font-medium">CPF já cadastrado no sistema.</p>}
-        {error && <p className="text-danger text-xs font-medium">{error}</p>}
-      </div>
+      {numPages > 1 && !loadError && (
+        <div className="flex items-center justify-center gap-4">
+          <button
+            type="button"
+            onClick={() => goToPage(pageNum - 1)}
+            disabled={pageNum <= 1 || submitting !== null}
+            className="btn-ghost text-xs px-3 py-1.5 disabled:opacity-40"
+          >
+            ← Anterior
+          </button>
+          <span className="text-text-tertiary text-xs">
+            Página {pageNum} de {numPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => goToPage(pageNum + 1)}
+            disabled={pageNum >= numPages || submitting !== null}
+            className="btn-ghost text-xs px-3 py-1.5 disabled:opacity-40"
+          >
+            Próxima →
+          </button>
+        </div>
+      )}
 
-      <div className="flex gap-4">
+      {confirmed ? (
         <button
-          onClick={handleReject}
-          disabled={submitting !== null}
-          className="flex-1 py-3 rounded-md bg-danger text-white font-semibold disabled:opacity-40"
+          onClick={handleDownloadAndContinue}
+          className="w-full py-3 rounded-md bg-primary text-on-primary font-semibold flex items-center justify-center gap-2"
         >
-          Recusar
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+          </svg>
+          Documento confirmado — Baixar e continuar
         </button>
-        <button
-          onClick={handleAccept}
-          disabled={!canAccept || submitting !== null}
-          className="flex-1 py-3 rounded-md bg-primary text-on-primary font-semibold disabled:opacity-40"
-        >
-          Aceitar
-        </button>
-      </div>
+      ) : (
+        <>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-text-secondary text-xs uppercase tracking-[0.15em] font-medium">
+                CPF(s) visível(is) no documento
+              </label>
+              {numPages > 1 && (
+                <span className="text-text-disabled text-[11px] text-right">
+                  Documento com {numPages} páginas — confira se há mais de um CPF
+                </span>
+              )}
+            </div>
+
+            {rows.map((row, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={row.value}
+                  onChange={(e) => handleCpfChange(index, e.target.value)}
+                  placeholder="000.000.000-00"
+                  className="input-base mono-input flex-1"
+                  disabled={submitting !== null}
+                />
+                {rows.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeRow(index)}
+                    disabled={submitting !== null}
+                    aria-label="Remover este CPF"
+                    className="text-text-tertiary hover:text-danger transition-colors p-1.5"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            ))}
+
+            {rows.some((r) => r.duplicate) && (
+              <p className="text-danger text-xs font-medium">Um ou mais CPFs já cadastrados no sistema.</p>
+            )}
+
+            {rows.length < MAX_CPF_ROWS && (
+              <button
+                type="button"
+                onClick={addRow}
+                disabled={submitting !== null}
+                className="btn-ghost text-xs self-start px-3 py-1.5"
+              >
+                + Adicionar outro CPF
+              </button>
+            )}
+
+            {error && <p className="text-danger text-xs font-medium">{error}</p>}
+          </div>
+
+          <div className="flex gap-4">
+            <button
+              onClick={handleReject}
+              disabled={submitting !== null}
+              className="flex-1 py-3 rounded-md bg-danger text-white font-semibold disabled:opacity-40"
+            >
+              Recusar
+            </button>
+            <button
+              onClick={handleAccept}
+              disabled={!canAccept || submitting !== null}
+              className="flex-1 py-3 rounded-md bg-primary text-on-primary font-semibold disabled:opacity-40"
+            >
+              Aceitar
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
