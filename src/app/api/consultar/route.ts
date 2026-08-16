@@ -30,9 +30,9 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!settings?.api_url) {
+    if (settings?.api_provider !== "supremo" && (!settings?.api_url || !settings?.api_token)) {
       return NextResponse.json(
-        { error: "Configure a URL da API em Configurações." },
+        { error: "Configure a URL e o Token da API em Configurações." },
         { status: 400 }
       );
     }
