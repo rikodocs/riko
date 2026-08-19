@@ -32,9 +32,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Documento já foi processado." }, { status: 409 });
     }
 
+    // Recusa é definitiva: o documento vira "rejected" e não volta pro
+    // estoque disponível. Mantém assigned_to como registro de quem recusou.
     const { error: updateError } = await supabase
       .from("documents")
-      .update({ assigned_to: null, assigned_at: null })
+      .update({ status: "rejected" })
       .eq("id", documentId);
 
     if (updateError) {
