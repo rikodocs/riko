@@ -38,9 +38,9 @@ export interface Person {
 
 interface PersonCardProps {
   person: Person;
-  actionLabel: string;
-  actionColor: "success" | "warning";
-  onAction: (personId: string) => void;
+  actionLabel?: string;
+  actionColor?: "success" | "warning";
+  onAction?: (personId: string) => void;
   onDocumentsChanged?: () => void;
   index: number;
 }
@@ -165,12 +165,14 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={(e) => { e.stopPropagation(); onAction(person.id); }}
-            className={`btn-ghost !py-1.5 !px-3 !text-[11px] !rounded-lg ${actionColors[actionColor]}`}
-          >
-            {actionLabel}
-          </button>
+          {onAction && actionLabel && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onAction(person.id); }}
+              className={`btn-ghost !py-1.5 !px-3 !text-[11px] !rounded-lg ${actionColors[actionColor || "success"]}`}
+            >
+              {actionLabel}
+            </button>
+          )}
           <svg
             className={`w-4 h-4 text-text-disabled transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
             fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}

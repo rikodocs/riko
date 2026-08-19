@@ -23,16 +23,10 @@ export default function DocsPage() {
     const { data } = await supabase
       .from("people")
       .select("*, documents(id, file_name, file_url, file_path, file_type)")
-      .eq("used", false)
+      .eq("used", true)
       .order("created_at", { ascending: false });
     if (data) setPeople(data);
     setLoading(false);
-  }
-
-  async function markAsUsed(personId: string) {
-    await supabase.from("people").update({ used: true }).eq("id", personId);
-    await supabase.from("documents").update({ status: "used" }).eq("person_id", personId);
-    setPeople((prev) => prev.filter((p) => p.id !== personId));
   }
 
   function cleanFileName(name: string, index: number, ext: string, total: number) {
@@ -99,15 +93,7 @@ export default function DocsPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      for (const person of batch) {
-        await supabase.from("people").update({ used: true }).eq("id", person.id);
-        await supabase.from("documents").update({ status: "used" }).eq("person_id", person.id);
-      }
-
-      const batchIds = new Set(batch.map((p) => p.id));
-      setPeople((prev) => prev.filter((p) => !batchIds.has(p.id)));
-
-      setExportMsg(`${qty} docs exportados e marcados como usados!`);
+      setExportMsg(`${qty} docs exportados!`);
       setBatchQty("");
     } catch (err) {
       setExportMsg(`Erro ao exportar: ${err instanceof Error ? err.message : "desconhecido"}`);
@@ -185,7 +171,7 @@ export default function DocsPage() {
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
                   </svg>
-                  Baixar ZIP + Marcar Usados
+                  Baixar ZIP
                 </>
               )}
             </button>
@@ -220,7 +206,7 @@ export default function DocsPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
-          <p className="text-text-tertiary text-sm">Nenhum documento consultado disponível.</p>
+          <p className="text-text-tertiary text-sm">Nenhum documento usado ainda.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -228,9 +214,6 @@ export default function DocsPage() {
             <PersonCard
               key={person.id}
               person={person}
-              actionLabel="Marcar como Usado"
-              actionColor="success"
-              onAction={markAsUsed}
               onDocumentsChanged={loadDocs}
               index={i}
             />
