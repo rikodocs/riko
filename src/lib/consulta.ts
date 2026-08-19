@@ -48,13 +48,8 @@ function parseOwnData(apiData: any): PersonFields {
   const basicos = apiData.DadosBasicos || {};
   const economicos = apiData.DadosEconomicos || {};
 
+  // Telefone não é mais salvo no cadastro.
   const phones: string[] = [];
-  if (Array.isArray(apiData.telefones)) {
-    for (const t of apiData.telefones) {
-      const num = t?.telefone || t?.numero || t?.fone || t?.celular;
-      if (num && String(num).trim()) phones.push(String(num).trim());
-    }
-  }
 
   const emails: string[] = [];
   if (Array.isArray(apiData.emails)) {
@@ -124,10 +119,6 @@ function parseSupremo(apiData: any): PersonFields | null {
 
   const dados = apiData.dados || {};
 
-  const phones: string[] = Array.isArray(apiData.telefones)
-    ? apiData.telefones.map((t: unknown) => String(t).trim()).filter(Boolean)
-    : [];
-
   const birthDateRaw = dados.NASC ? String(dados.NASC).trim() : "";
   const birthDate = birthDateRaw ? birthDateRaw.split(" ")[0] : null;
 
@@ -136,7 +127,8 @@ function parseSupremo(apiData: any): PersonFields | null {
     birth_date: birthDate,
     mother_name: null,
     profession: null,
-    phones,
+    // Telefone não é mais salvo no cadastro.
+    phones: [],
     emails: [],
     addresses: [],
     city: null,

@@ -442,9 +442,6 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
                     <p className="text-text-secondary text-xs">
                       {r.fields.birth_date ? `Nascimento: ${r.fields.birth_date}` : "Nascimento não informado"}
                     </p>
-                    {r.fields.phones.length > 0 && (
-                      <p className="text-text-secondary text-xs">Telefone(s): {r.fields.phones.join(", ")}</p>
-                    )}
                     {r.fields.income && <p className="text-text-secondary text-xs">Renda: {r.fields.income}</p>}
                   </>
                 ) : (
