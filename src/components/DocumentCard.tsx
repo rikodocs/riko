@@ -41,7 +41,7 @@ function formatCpfDisplay(digits: string): string {
   return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 }
 
-export default function DocumentCard({ doc, viewerId, viewerName, onDone }: DocumentCardProps) {
+export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [rows, setRows] = useState<CpfRowState[]>([emptyRow()]);
   const [submitting, setSubmitting] = useState<"preview" | "save" | "reject" | null>(null);
@@ -50,6 +50,7 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
   const [pageNum, setPageNum] = useState(1);
   const [numPages, setNumPages] = useState(1);
   const [confirmed, setConfirmed] = useState(false);
+  const [zoomSrc, setZoomSrc] = useState<string | null>(null);
   const [previewResults, setPreviewResults] = useState<PreviewEntry[] | null>(null);
   // Guarda o raw_data que veio da prévia pra reenviar na confirmação, sem
   // precisar consultar a API de novo (nem expor isso na tela).
@@ -71,6 +72,7 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
     setNumPages(1);
     setConfirmed(false);
     setPreviewResults(null);
+    setZoomSrc(null);
     rawDataByCpfRef.current = {};
     pdfDocRef.current = null;
     fileBlobRef.current = null;
@@ -89,22 +91,10 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id]);
 
-  function drawWatermark(ctx: CanvasRenderingContext2D, width: number, height: number) {
-    const label = `${viewerName} · ${new Date().toLocaleString("pt-BR")}`;
-    ctx.save();
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = "#ffffff";
-    ctx.font = `${Math.max(14, Math.floor(width / 40))}px sans-serif`;
-    ctx.translate(width / 2, height / 2);
-    ctx.rotate(-Math.PI / 6);
-    const stepX = 260;
-    const stepY = 120;
-    for (let y = -height; y < height; y += stepY) {
-      for (let x = -width; x < width; x += stepX) {
-        ctx.fillText(label, x, y);
-      }
-    }
-    ctx.restore();
+  function openZoom() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    setZoomSrc(canvas.toDataURL());
   }
 
   async function loadDocument() {
@@ -161,7 +151,6 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
         canvas.height = img.height;
         const ctx = canvas.getContext("2d")!;
         ctx.drawImage(img, 0, 0);
-        drawWatermark(ctx, canvas.width, canvas.height);
         URL.revokeObjectURL(url);
       };
       img.onerror = () => {
@@ -202,8 +191,6 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
       return;
     }
     renderTaskRef.current = null;
-    if (isCancelled()) return;
-    drawWatermark(ctx, canvas.width, canvas.height);
   }
 
   async function goToPage(nextPage: number) {
@@ -372,8 +359,11 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
   return (
     <div className="glass-static rounded-lg p-6 flex flex-col gap-6 max-w-xl w-full animate-fade-in-scale">
       <div
-        className="relative rounded-md overflow-hidden bg-surface-1 border border-surface-border select-none"
+        className={`relative rounded-md overflow-hidden bg-surface-1 border border-surface-border select-none ${
+          loadError ? "" : "cursor-zoom-in"
+        }`}
         onContextMenu={(e) => e.preventDefault()}
+        onClick={loadError ? undefined : openZoom}
       >
         {loadError ? (
           <p className="text-danger text-sm p-6 text-center">{loadError}</p>
@@ -382,10 +372,39 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
             ref={canvasRef}
             className="w-full h-auto block pointer-events-none"
             draggable={false}
-            aria-label="Documento para revisão, com marca d'água"
+            aria-label="Documento para revisão — clique para ampliar"
           />
         )}
       </div>
+
+      {zoomSrc && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setZoomSrc(null)}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setZoomSrc(null);
+            }}
+            aria-label="Fechar"
+            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-surface-1 border border-surface-border text-text-primary flex items-center justify-center hover:bg-surface-2 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={zoomSrc}
+            alt="Documento ampliado"
+            className="max-w-[95vw] max-h-[90vh] object-contain rounded-md select-none"
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.preventDefault()}
+            draggable={false}
+          />
+        </div>
+      )}
 
       {numPages > 1 && !loadError && (
         <div className="flex items-center justify-center gap-4">
