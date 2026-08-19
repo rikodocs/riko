@@ -138,29 +138,11 @@ function parseSupremo(apiData: any): PersonFields | null {
   };
 }
 
-// Checks whether a CPF is already registered, and if not, looks it up
-// against the configured provider (OwnData or Supremo dos 7). Doesn't write
-// anything — used to preview data before the viewer confirms it's really
-// that person.
-export async function buscarDadosCPF(
-  supabase: SupabaseClient,
-  cpf: string,
-  settings: ConsultaSettings
-): Promise<LookupResult> {
-  const { data: existingPerson } = await supabase
-    .from("people")
-    .select("id, name, used")
-    .eq("cpf", cpf)
-    .single();
-
-  if (existingPerson) {
-    return {
-      ok: false,
-      duplicate: true,
-      message: `CPF já cadastrado: ${existingPerson.name || "sem nome"}`,
-    };
-  }
-
+// Calls the configured provider (OwnData or Supremo dos 7) for a CPF and
+// parses the result. Doesn't touch `people` at all — no duplicate check,
+// no read, no write. Used both by buscarDadosCPF (adds the duplicate
+// check) and by the admin's "atualizar" action on an existing person.
+export async function buscarDadosBrutos(cpf: string, settings: ConsultaSettings): Promise<LookupResult> {
   const provider: ApiProvider = settings.api_provider === "supremo" ? "supremo" : "owndata";
 
   const apiUrl =
@@ -185,6 +167,31 @@ export async function buscarDadosCPF(
   }
 
   return { ok: true, message: "Dados encontrados.", fields, rawData: apiData };
+}
+
+// Checks whether a CPF is already registered, and if not, looks it up
+// against the configured provider. Doesn't write anything — used to
+// preview data before the viewer confirms it's really that person.
+export async function buscarDadosCPF(
+  supabase: SupabaseClient,
+  cpf: string,
+  settings: ConsultaSettings
+): Promise<LookupResult> {
+  const { data: existingPerson } = await supabase
+    .from("people")
+    .select("id, name, used")
+    .eq("cpf", cpf)
+    .single();
+
+  if (existingPerson) {
+    return {
+      ok: false,
+      duplicate: true,
+      message: `CPF já cadastrado: ${existingPerson.name || "sem nome"}`,
+    };
+  }
+
+  return buscarDadosBrutos(cpf, settings);
 }
 
 // Persists a person already looked up via buscarDadosCPF (fields/rawData

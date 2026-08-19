@@ -49,6 +49,8 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
   const [expanded, setExpanded] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const [attachMsg, setAttachMsg] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [pasteReady, setPasteReady] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewType, setPreviewType] = useState<"pdf" | "image" | null>(null);
@@ -60,6 +62,29 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
   useEffect(() => {
     setLocalDocs(person.documents || []);
   }, [person.documents]);
+
+  async function handleRefresh(e: React.MouseEvent) {
+    e.stopPropagation();
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      const res = await fetch("/api/admin/atualizar-pessoa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ personId: person.id }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setRefreshError(body.error || "Erro ao atualizar.");
+        return;
+      }
+      onDocumentsChanged?.();
+    } catch (err) {
+      setRefreshError(err instanceof Error ? err.message : "Erro ao atualizar.");
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   // Shared upload logic for files (from input, paste, or drop)
   async function uploadFiles(files: File[]) {
@@ -165,6 +190,23 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {refreshError && (
+            <span className="text-danger text-[11px] font-medium">{refreshError}</span>
+          )}
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            aria-label="Atualizar dados consultando a API de novo"
+            title="Atualizar dados consultando a API de novo"
+            className="text-text-tertiary hover:text-primary transition-colors p-1.5 disabled:opacity-40"
+          >
+            <svg
+              className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+              fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+            </svg>
+          </button>
           {onAction && actionLabel && (
             <button
               onClick={(e) => { e.stopPropagation(); onAction(person.id); }}
