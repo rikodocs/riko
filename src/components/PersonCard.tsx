@@ -92,7 +92,7 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
           file_path: fileName,
           file_url: urlData.publicUrl,
           file_type: file.type,
-          status: person.used ? "used" : "consulted",
+          status: "used",
           cpf_extracted: person.cpf,
           person_id: person.id,
         }).select().single();

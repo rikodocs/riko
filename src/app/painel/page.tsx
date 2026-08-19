@@ -25,7 +25,7 @@ export default function PainelPage() {
       .from("documents")
       .select("id, file_type")
       .eq("assigned_to", viewerId)
-      .in("status", ["pending", "manual_review"])
+      .eq("status", "available")
       .order("assigned_at", { ascending: true });
     if (error) {
       setLoadError("Não foi possível carregar seus documentos. Tente novamente.");

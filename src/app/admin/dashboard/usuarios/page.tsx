@@ -47,7 +47,7 @@ export default function UsuariosPage() {
         .from("documents")
         .select("id", { count: "exact", head: true })
         .eq("assigned_to", u.id)
-        .in("status", ["pending", "manual_review"]);
+        .eq("status", "available");
       rows.push({ ...u, pending_count: count || 0 });
     }
     setUsers(rows);
@@ -59,7 +59,7 @@ export default function UsuariosPage() {
       .from("documents")
       .select("id", { count: "exact", head: true })
       .is("assigned_to", null)
-      .in("status", ["pending", "manual_review"]);
+      .eq("status", "available");
     setAvailableCount(count || 0);
   }, []);
 
@@ -105,7 +105,7 @@ export default function UsuariosPage() {
       .from("documents")
       .select("id")
       .is("assigned_to", null)
-      .in("status", ["pending", "manual_review"])
+      .eq("status", "available")
       .order("created_at", { ascending: true })
       .limit(amount);
 

@@ -190,13 +190,10 @@ export default function FiltrosPage() {
   const handleToggleUsed = async (personId: string) => {
     const person = allPeople.find((p) => p.id === personId);
     if (!person) return;
-    const newUsed = !person.used;
-    await supabase.from("people").update({ used: newUsed }).eq("id", personId);
-    if (newUsed) {
-      await supabase.from("documents").update({ status: "used" }).eq("person_id", personId);
-    } else {
-      await supabase.from("documents").update({ status: "consulted" }).eq("person_id", personId);
-    }
+    // "used" aqui é uma flag comercial da pessoa, independente do status do
+    // documento (que já ficou "used" quando o CPF foi confirmado e não muda
+    // mais depois disso).
+    await supabase.from("people").update({ used: !person.used }).eq("id", personId);
     loadPeople();
   };
 

@@ -26,8 +26,10 @@ export default function DocsUsadosPage() {
   }
 
   async function unmarkUsed(personId: string) {
+    // "used" aqui é uma flag comercial da pessoa (dado já repassado/vendido),
+    // independente do status do documento — o documento continua "used"
+    // (foi confirmado e virou um cadastro) mesmo desmarcando isso.
     await supabase.from("people").update({ used: false }).eq("id", personId);
-    await supabase.from("documents").update({ status: "consulted" }).eq("person_id", personId);
     setPeople((prev) => prev.filter((p) => p.id !== personId));
   }
 

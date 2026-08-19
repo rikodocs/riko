@@ -217,7 +217,7 @@ export async function salvarPessoaConsultada(
     for (const dId of docIds) {
       await supabase
         .from("documents")
-        .update({ status: "duplicate", cpf_extracted: cpf })
+        .update({ status: "rejected", cpf_extracted: cpf })
         .eq("id", dId);
     }
     return {
@@ -241,16 +241,15 @@ export async function salvarPessoaConsultada(
     .single();
 
   if (personError) {
-    for (const dId of docIds) {
-      await supabase.from("documents").update({ status: "error" }).eq("id", dId);
-    }
+    // Falha técnica (não é rejeição nem duplicado) — não muda o status, o
+    // documento continua "available" pra tentar de novo.
     return { ok: false, message: `Falha ao salvar pessoa: ${personError.message}` };
   }
 
   for (const dId of docIds) {
     await supabase
       .from("documents")
-      .update({ status: "consulted", cpf_extracted: cpf, person_id: newPerson.id })
+      .update({ status: "used", cpf_extracted: cpf, person_id: newPerson.id })
       .eq("id", dId);
   }
 
@@ -259,27 +258,4 @@ export async function salvarPessoaConsultada(
     message: `${personData.name || "Pessoa"} registrado com sucesso!`,
     personId: newPerson.id,
   };
-}
-
-// Looks up a CPF and immediately persists it in one shot (lookup + save).
-// Used by the admin batch review flow, which doesn't have a preview step.
-export async function consultarPessoaPorCPF(
-  supabase: SupabaseClient,
-  cpf: string,
-  docIds: string[],
-  settings: ConsultaSettings
-): Promise<ConsultaResult> {
-  const lookup = await buscarDadosCPF(supabase, cpf, settings);
-
-  if (!lookup.ok || !lookup.fields) {
-    for (const dId of docIds) {
-      await supabase
-        .from("documents")
-        .update(lookup.duplicate ? { status: "duplicate", cpf_extracted: cpf } : { status: "error" })
-        .eq("id", dId);
-    }
-    return { ok: false, duplicate: lookup.duplicate, message: lookup.message };
-  }
-
-  return salvarPessoaConsultada(supabase, cpf, docIds, lookup.fields, lookup.rawData);
 }

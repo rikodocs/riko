@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     if (doc.assigned_to !== viewerId) {
       return NextResponse.json({ error: "Documento não está atribuído a você." }, { status: 403 });
     }
-    if (!["pending", "manual_review"].includes(doc.status)) {
+    if (doc.status !== "available") {
       return NextResponse.json({ error: "Documento já foi processado." }, { status: 409 });
     }
 
