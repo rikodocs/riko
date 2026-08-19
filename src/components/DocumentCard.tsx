@@ -347,13 +347,18 @@ export default function DocumentCard({ doc, viewerId, viewerName, onDone }: Docu
   async function handleReject() {
     setSubmitting("reject");
     setError(null);
-    const firstCpf = rows
-      .map((r) => r.value.replace(/\D/g, ""))
-      .find((digits) => digits.length === 11);
+    // Se algum CPF digitado já estava cadastrado, é esse o motivo real da
+    // recusa — prioriza ele em vez de outro CPF válido não-duplicado, pra
+    // o histórico do admin mostrar "duplicado" em vez de genérico.
+    const duplicateRow = rows.find((r) => r.duplicate);
+    const reason = duplicateRow ? "duplicate" : undefined;
+    const firstCpf = duplicateRow
+      ? duplicateRow.value.replace(/\D/g, "")
+      : rows.map((r) => r.value.replace(/\D/g, "")).find((digits) => digits.length === 11);
     const res = await fetch("/api/viewer/recusar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ viewerId, documentId: doc.id, cpf: firstCpf }),
+      body: JSON.stringify({ viewerId, documentId: doc.id, cpf: firstCpf, reason }),
     });
     setSubmitting(null);
     if (!res.ok) {

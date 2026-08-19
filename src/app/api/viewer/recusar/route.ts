@@ -5,10 +5,11 @@ export async function POST(request: Request) {
   try {
     const supabase = createServerClient();
     const body = await request.json();
-    const { viewerId, documentId, cpf } = body as {
+    const { viewerId, documentId, cpf, reason } = body as {
       viewerId?: string;
       documentId?: string;
       cpf?: string;
+      reason?: string;
     };
 
     if (!viewerId || !documentId) {
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
       viewer_id: viewerId,
       cpf: cpf || null,
       action: "rejected",
+      reason: reason === "duplicate" ? "duplicate" : null,
     });
 
     return NextResponse.json({ ok: true });

@@ -16,6 +16,7 @@ interface HistoryRow {
   id: string;
   cpf: string | null;
   action: "accepted" | "rejected";
+  reason: string | null;
   created_at: string;
   documents: { file_name: string } | null;
 }
@@ -136,7 +137,7 @@ export default function UsuariosPage() {
     setHistoryLoading(true);
     const { data } = await supabase
       .from("document_reviews")
-      .select("id, cpf, action, created_at, documents(file_name)")
+      .select("id, cpf, action, reason, created_at, documents(file_name)")
       .eq("viewer_id", userId)
       .order("created_at", { ascending: false })
       .limit(50);
@@ -267,8 +268,20 @@ export default function UsuariosPage() {
                                   </td>
                                   <td className="py-2 pr-4 font-mono text-text-secondary">{h.cpf || "—"}</td>
                                   <td className="py-2 pr-4">
-                                    <span className={`badge ${h.action === "accepted" ? "badge-success" : "badge-danger"}`}>
-                                      {h.action === "accepted" ? "Aceito" : "Rejeitado"}
+                                    <span
+                                      className={`badge ${
+                                        h.action === "accepted"
+                                          ? "badge-success"
+                                          : h.reason === "duplicate"
+                                          ? "badge-warning"
+                                          : "badge-danger"
+                                      }`}
+                                    >
+                                      {h.action === "accepted"
+                                        ? "Aceito"
+                                        : h.reason === "duplicate"
+                                        ? "Rejeitado (duplicado)"
+                                        : "Rejeitado"}
                                     </span>
                                   </td>
                                   <td className="py-2 text-text-tertiary">
