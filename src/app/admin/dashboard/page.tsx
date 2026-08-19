@@ -5,23 +5,35 @@ import { supabase } from "@/lib/supabase";
 
 interface Stats {
   available: number;
+  withUsers: number;
   rejected: number;
   used: number;
   total: number;
 }
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<Stats>({ available: 0, rejected: 0, used: 0, total: 0 });
+  const [stats, setStats] = useState<Stats>({ available: 0, withUsers: 0, rejected: 0, used: 0, total: 0 });
 
   useEffect(() => {
     loadStats();
   }, []);
 
   async function loadStats() {
+    // "Disponíveis" = estoque livre de verdade, ainda não atribuído a
+    // ninguém. Documento atribuído a um usuário (aguardando ele decidir)
+    // não conta mais aqui — só aparece em "Com usuários" e no "Em mãos"
+    // de cada um, em Usuários.
     const { count: availableCount } = await supabase
       .from("documents")
       .select("id", { count: "exact", head: true })
-      .eq("status", "available");
+      .eq("status", "available")
+      .is("assigned_to", null);
+
+    const { count: withUsersCount } = await supabase
+      .from("documents")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "available")
+      .not("assigned_to", "is", null);
 
     const { count: rejectedCount } = await supabase
       .from("documents")
@@ -33,15 +45,22 @@ export default function DashboardPage() {
       .select("id", { count: "exact", head: true })
       .eq("status", "used");
 
-    const available = availableCount || 0;
-    const rejected = rejectedCount || 0;
-    const used = usedCount || 0;
+    const { count: totalCount } = await supabase
+      .from("documents")
+      .select("id", { count: "exact", head: true });
 
-    setStats({ available, rejected, used, total: available + rejected + used });
+    setStats({
+      available: availableCount || 0,
+      withUsers: withUsersCount || 0,
+      rejected: rejectedCount || 0,
+      used: usedCount || 0,
+      total: totalCount || 0,
+    });
   }
 
   const statCards = [
     { label: "Disponíveis", value: stats.available, color: "text-warning" },
+    { label: "Com usuários", value: stats.withUsers, color: "text-primary" },
     { label: "Rejeitados", value: stats.rejected, color: "text-danger" },
     { label: "Usados", value: stats.used, color: "text-success" },
     { label: "Total", value: stats.total, color: "text-text-primary" },
@@ -49,7 +68,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {statCards.map((card, i) => (
           <div
             key={card.label}
