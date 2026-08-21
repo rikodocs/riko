@@ -41,6 +41,25 @@ function formatCpfDisplay(digits: string): string {
   return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 }
 
+// Usado quando o CPF é válido mas a API não trouxe dados (fora do ar, sem
+// retorno, etc.) — salva só o CPF; o botão de atualizar (na tela de Docs)
+// re-consulta depois e completa o cadastro.
+function blankPersonFields(): PersonFields {
+  return {
+    name: null,
+    birth_date: null,
+    mother_name: null,
+    profession: null,
+    phones: [],
+    emails: [],
+    addresses: [],
+    city: null,
+    state: null,
+    score: null,
+    income: null,
+  };
+}
+
 export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [rows, setRows] = useState<CpfRowState[]>([emptyRow()]);
@@ -289,15 +308,18 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
   }
 
   // Passo 2: só agora grava de fato — o viewer já viu os dados e confirmou.
+  // CPFs que a API não achou (fora do ar, sem retorno etc.) também entram
+  // aqui, salvos só com o CPF — só os duplicados (já cadastrados) ficam de
+  // fora, esses não têm o que salvar.
   async function handleConfirmSave() {
     if (!previewResults) return;
-    const okEntries = previewResults.filter((r) => r.ok && r.fields);
-    if (okEntries.length === 0) return;
+    const confirmable = previewResults.filter((r) => !r.duplicate);
+    if (confirmable.length === 0) return;
     setSubmitting("save");
     setError(null);
-    const entries = okEntries.map((r) => ({
+    const entries = confirmable.map((r) => ({
       cpf: r.cpf,
-      fields: r.fields as PersonFields,
+      fields: r.ok && r.fields ? r.fields : blankPersonFields(),
       rawData: rawDataByCpfRef.current[r.cpf] ?? null,
     }));
     const res = await fetch("/api/viewer/aceitar", {
@@ -451,7 +473,11 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
               <div
                 key={r.cpf}
                 className={`rounded-md border p-3 space-y-1 ${
-                  r.ok ? "border-surface-border bg-surface-1" : "border-danger/40 bg-danger-muted"
+                  r.ok
+                    ? "border-surface-border bg-surface-1"
+                    : r.duplicate
+                    ? "border-danger/40 bg-danger-muted"
+                    : "border-warning/40 bg-warning-muted"
                 }`}
               >
                 <p className="mono-input text-xs text-text-tertiary">{formatCpfDisplay(r.cpf)}</p>
@@ -463,13 +489,22 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
                     </p>
                     {r.fields.income && <p className="text-text-secondary text-xs">Renda: {r.fields.income}</p>}
                   </>
-                ) : (
+                ) : r.duplicate ? (
                   <p className="text-danger text-xs font-medium">{r.message}</p>
+                ) : (
+                  <>
+                    <p className="text-warning text-xs font-medium">
+                      CPF válido, mas não foi possível buscar os dados agora (API indisponível ou sem retorno).
+                    </p>
+                    <p className="text-text-tertiary text-xs">
+                      Será salvo só com o CPF — use o botão de atualizar depois pra completar o cadastro.
+                    </p>
+                  </>
                 )}
               </div>
             ))}
 
-            {previewResults.every((r) => !r.ok) && (
+            {previewResults.every((r) => r.duplicate) && (
               <p className="text-danger text-xs font-medium">
                 Nenhum CPF pôde ser confirmado. Volte e corrija antes de tentar de novo.
               </p>
@@ -488,7 +523,7 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
             </button>
             <button
               onClick={handleConfirmSave}
-              disabled={submitting !== null || previewResults.every((r) => !r.ok)}
+              disabled={submitting !== null || previewResults.every((r) => r.duplicate)}
               className="flex-1 py-3 rounded-md bg-primary text-on-primary font-semibold disabled:opacity-40"
             >
               {submitting === "save" ? "Salvando..." : "Confirmar e salvar"}
