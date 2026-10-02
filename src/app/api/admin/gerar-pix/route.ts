@@ -1,7 +1,23 @@
 import { NextResponse } from "next/server";
+import QRCode from "qrcode";
 import { createServerClient } from "@/lib/supabase";
 
 const ATIVOPAY_URL = "https://api-gateway.ativopay.com/api/user/transactions";
+
+function findPixCode(value: unknown, depth = 0): string | null {
+  if (depth > 6 || value == null) return null;
+  if (typeof value === "string") {
+    const s = value.trim();
+    return s.startsWith("000201") ? s : null;
+  }
+  if (typeof value === "object") {
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      const found = findPixCode(v, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
 
 // Gera um PIX copia e cola via Ativopay usando o token/CPF/telefone fixos
 // salvos em settings. So o valor e a descricao mudam a cada chamada.
@@ -93,27 +109,21 @@ export async function POST(request: Request) {
       );
     }
 
-    const pix = result.data?.pix;
-    if (!pix) {
+    // O nome do campo varia (qrcode, qrCode, brCode, payload, emv...), então
+    // procura na resposta inteira a string do PIX copia e cola (EMV começa
+    // com "000201") e gera o QR Code a partir dela.
+    const copyPaste = findPixCode(result.data ?? result);
+    if (!copyPaste) {
+      const pixKeys = result.data?.pix ? Object.keys(result.data.pix).join(", ") : "nenhum";
       return NextResponse.json(
-        { error: "Nenhum dado de PIX retornado pela API" },
+        {
+          error: `Copia e cola não encontrado na resposta da API (campos do pix: ${pixKeys}). Resposta: ${text.slice(0, 500)}`,
+        },
         { status: 400 }
       );
     }
 
-    let qrcode: string | undefined = pix.qrCode;
-    const copyPaste: string | undefined = pix.brCode || pix.payload;
-
-    if (!qrcode || !copyPaste) {
-      return NextResponse.json(
-        { error: "QR Code ou copia e cola não retornados" },
-        { status: 400 }
-      );
-    }
-
-    if (!qrcode.startsWith("data:")) {
-      qrcode = `data:image/png;base64,${qrcode}`;
-    }
+    const qrcode = await QRCode.toDataURL(copyPaste, { width: 512, margin: 1 });
 
     return NextResponse.json({
       qrcode,
