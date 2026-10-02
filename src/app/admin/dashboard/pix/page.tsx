@@ -22,6 +22,14 @@ function formatBRL(valor: number) {
   return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+// 123456 centavos → "1.234,56"
+function formatValor(centavos: number) {
+  return (centavos / 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 export default function PixPage() {
   // Config fixa (salva em settings)
   const [token, setToken] = useState("");
@@ -34,7 +42,7 @@ export default function PixPage() {
   const [configMsg, setConfigMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Geração
-  const [valor, setValor] = useState("");
+  const [valorCentavos, setValorCentavos] = useState(0);
   const [descricao, setDescricao] = useState("");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,11 +108,11 @@ export default function PixPage() {
     setResult(null);
     setCopied(false);
 
-    const v = parseFloat(valor.replace(",", "."));
-    if (!Number.isFinite(v) || v < 0.01) {
-      setError("Valor inválido");
+    if (valorCentavos < 1) {
+      setError("Digite um valor maior que R$ 0,00");
       return;
     }
+    const v = valorCentavos / 100;
 
     setGenerating(true);
     try {
@@ -283,16 +291,20 @@ export default function PixPage() {
         <form onSubmit={handleGerar} className="space-y-4">
           <div className="space-y-2">
             <label className="block text-xs font-medium text-text-secondary">Valor (R$)</label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-primary">R$</span>
+            {/* Máscara de moeda: digita só números e preenche da direita (1 → 0,01; 1050 → 10,50) */}
+            <div className="flex items-center gap-2 rounded-md border border-surface-border bg-surface-1 px-4 transition-all duration-200 focus-within:border-primary focus-within:shadow-[0_0_0_3px_var(--color-ring),0_0_12px_var(--color-primary-glow)]">
+              <span className="text-sm font-semibold text-primary select-none">R$</span>
               <input
                 type="text"
-                inputMode="decimal"
-                value={valor}
-                onChange={(e) => setValor(e.target.value.replace(/[^\d.,]/g, ""))}
+                inputMode="numeric"
+                value={valorCentavos ? formatValor(valorCentavos) : ""}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, "").replace(/^0+/, "").slice(0, 9);
+                  setValorCentavos(digits ? parseInt(digits, 10) : 0);
+                }}
                 placeholder="0,00"
-                className="input-base w-full pl-10"
-                required
+                className="flex-1 min-w-0 bg-transparent py-2.5 text-sm text-text-primary placeholder:text-text-disabled outline-none tabular-nums"
+                autoComplete="off"
               />
             </div>
           </div>
