@@ -51,6 +51,15 @@ const navItems = [
     ),
   },
   {
+    label: "PIX",
+    href: "/admin/dashboard/pix",
+    icon: (
+      <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4h6v6H4V4zm10 0h6v6h-6V4zM4 14h6v6H4v-6zm10 0h2v2h-2v-2zm4 0h2v2h-2v-2zm-4 4h2v2h-2v-2zm4 0h2v2h-2v-2z" />
+      </svg>
+    ),
+  },
+  {
     label: "Configurações",
     href: "/admin/dashboard/configuracoes",
     icon: (
