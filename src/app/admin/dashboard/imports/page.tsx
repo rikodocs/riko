@@ -25,7 +25,7 @@ export default function ImportsPage() {
     const { data } = await supabase
       .from("documents")
       .select("id, file_name, status, created_at")
-      .in("status", ["available", "used", "rejected"])
+      .in("status", ["available", "used", "rejected", "downloaded"])
       .order("created_at", { ascending: false })
       .limit(20);
     if (data) setRecentDocs(data);
@@ -194,6 +194,7 @@ export default function ImportsPage() {
       available: { cls: "badge-warning", label: "Disponível" },
       used: { cls: "badge-success", label: "Usado" },
       rejected: { cls: "badge-danger", label: "Rejeitado" },
+      downloaded: { cls: "badge-primary", label: "Baixado" },
     };
     const c = config[status] || { cls: "", label: status };
     return <span className={`badge ${c.cls}`}>{c.label}</span>;

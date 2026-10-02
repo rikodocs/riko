@@ -8,11 +8,12 @@ interface Stats {
   withUsers: number;
   rejected: number;
   used: number;
+  downloaded: number;
   total: number;
 }
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<Stats>({ available: 0, withUsers: 0, rejected: 0, used: 0, total: 0 });
+  const [stats, setStats] = useState<Stats>({ available: 0, withUsers: 0, rejected: 0, used: 0, downloaded: 0, total: 0 });
 
   useEffect(() => {
     loadStats();
@@ -45,6 +46,11 @@ export default function DashboardPage() {
       .select("id", { count: "exact", head: true })
       .eq("status", "used");
 
+    const { count: downloadedCount } = await supabase
+      .from("documents")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "downloaded");
+
     const { count: totalCount } = await supabase
       .from("documents")
       .select("id", { count: "exact", head: true });
@@ -54,6 +60,7 @@ export default function DashboardPage() {
       withUsers: withUsersCount || 0,
       rejected: rejectedCount || 0,
       used: usedCount || 0,
+      downloaded: downloadedCount || 0,
       total: totalCount || 0,
     });
   }
@@ -63,12 +70,13 @@ export default function DashboardPage() {
     { label: "Com usuários", value: stats.withUsers, color: "text-primary" },
     { label: "Rejeitados", value: stats.rejected, color: "text-danger" },
     { label: "Usados", value: stats.used, color: "text-success" },
+    { label: "Baixados", value: stats.downloaded, color: "text-text-secondary" },
     { label: "Total", value: stats.total, color: "text-text-primary" },
   ];
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
         {statCards.map((card, i) => (
           <div
             key={card.label}
