@@ -14,7 +14,7 @@ interface DocumentCardProps {
   doc: DocumentCardDoc;
   viewerId: string;
   viewerName: string;
-  onDone: () => void;
+  onDone: (outcome: "approved" | "rejected") => void;
 }
 
 interface CpfRowState {
@@ -68,7 +68,6 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pageNum, setPageNum] = useState(1);
   const [numPages, setNumPages] = useState(1);
-  const [confirmed, setConfirmed] = useState(false);
   const [zoomSrc, setZoomSrc] = useState<string | null>(null);
   const [previewResults, setPreviewResults] = useState<PreviewEntry[] | null>(null);
   // Guarda o raw_data que veio da prévia pra reenviar na confirmação, sem
@@ -80,7 +79,6 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
   const renderTokenRef = useRef(0);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const pdfDocRef = useRef<any>(null);
-  const fileBlobRef = useRef<Blob | null>(null);
 
   useEffect(() => {
     setRows([emptyRow()]);
@@ -89,12 +87,10 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
     setLoadError(null);
     setPageNum(1);
     setNumPages(1);
-    setConfirmed(false);
     setPreviewResults(null);
     setZoomSrc(null);
     rawDataByCpfRef.current = {};
     pdfDocRef.current = null;
-    fileBlobRef.current = null;
     loadDocument();
     return () => {
       // Invalidate any in-flight async work from this doc.id (loadDocument,
@@ -130,7 +126,6 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
     }
     const blob = await res.blob();
     if (isCancelled()) return;
-    fileBlobRef.current = blob;
 
     if (doc.file_type === "application/pdf") {
       const arrayBuffer = await blob.arrayBuffer();
@@ -322,7 +317,7 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
       fields: r.ok && r.fields ? r.fields : blankPersonFields(),
       rawData: rawDataByCpfRef.current[r.cpf] ?? null,
     }));
-    const res = await fetch("/api/viewer/aceitar", {
+    const res = await fetch("/api/moderador/aprovar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ viewerId, documentId: doc.id, entries }),
@@ -333,24 +328,8 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
       setError(responseBody.error || "Erro ao confirmar.");
       return;
     }
-    setConfirmed(true);
-  }
-
-  function handleDownloadAndContinue() {
-    const blob = fileBlobRef.current;
-    if (blob) {
-      const ext =
-        doc.file_type === "application/pdf" ? "pdf" : (doc.file_type || "").split("/")[1] || "bin";
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `documento-${doc.id}.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    }
-    onDone();
+    // Aprovado: já passa pro próximo documento da fila
+    onDone("approved");
   }
 
   async function handleReject() {
@@ -364,7 +343,7 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
     const firstCpf = duplicateRow
       ? duplicateRow.value.replace(/\D/g, "")
       : rows.map((r) => r.value.replace(/\D/g, "")).find((digits) => digits.length === 11);
-    const res = await fetch("/api/viewer/recusar", {
+    const res = await fetch("/api/moderador/recusar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ viewerId, documentId: doc.id, cpf: firstCpf, reason }),
@@ -375,7 +354,7 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
       setError(responseBody.error || "Erro ao recusar.");
       return;
     }
-    onDone();
+    onDone("rejected");
   }
 
   return (
@@ -452,17 +431,7 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
         </div>
       )}
 
-      {confirmed ? (
-        <button
-          onClick={handleDownloadAndContinue}
-          className="w-full py-3 rounded-md bg-primary text-on-primary font-semibold flex items-center justify-center gap-2"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-          </svg>
-          Documento confirmado — Baixar e continuar
-        </button>
-      ) : previewResults ? (
+      {previewResults ? (
         <>
           <div className="flex flex-col gap-3">
             <label className="text-text-secondary text-xs uppercase tracking-[0.15em] font-medium">
@@ -526,7 +495,7 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
               disabled={submitting !== null || previewResults.every((r) => r.duplicate)}
               className="flex-1 py-3 rounded-md bg-primary text-on-primary font-semibold disabled:opacity-40"
             >
-              {submitting === "save" ? "Salvando..." : "Confirmar e salvar"}
+              {submitting === "save" ? "Salvando..." : "Aprovar e salvar"}
             </button>
           </div>
         </>
@@ -602,7 +571,7 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
               disabled={!canAccept || submitting !== null}
               className="flex-1 py-3 rounded-md bg-primary text-on-primary font-semibold disabled:opacity-40"
             >
-              {submitting === "preview" ? "Consultando..." : "Aceitar"}
+              {submitting === "preview" ? "Consultando..." : "Consultar"}
             </button>
           </div>
         </>

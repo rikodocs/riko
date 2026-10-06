@@ -204,7 +204,14 @@ export async function salvarPessoaConsultada(
   docIds: string[],
   fields: PersonFields,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  rawData: any
+  rawData: any,
+  // Status que o documento recebe quando a pessoa é salva / quando o CPF já
+  // existia. No fluxo do moderador o doc aprovado vai pro estoque
+  // ("available") e duplicado não muda nada (o moderador decide o que fazer).
+  statuses: { onSuccess: string; onDuplicate: string | null } = {
+    onSuccess: "used",
+    onDuplicate: "rejected",
+  }
 ): Promise<ConsultaResult> {
   const { data: existingPerson } = await supabase
     .from("people")
@@ -213,11 +220,13 @@ export async function salvarPessoaConsultada(
     .single();
 
   if (existingPerson) {
-    for (const dId of docIds) {
-      await supabase
-        .from("documents")
-        .update({ status: "rejected", cpf_extracted: cpf })
-        .eq("id", dId);
+    if (statuses.onDuplicate) {
+      for (const dId of docIds) {
+        await supabase
+          .from("documents")
+          .update({ status: statuses.onDuplicate, cpf_extracted: cpf })
+          .eq("id", dId);
+      }
     }
     return {
       ok: false,
@@ -248,7 +257,7 @@ export async function salvarPessoaConsultada(
   for (const dId of docIds) {
     await supabase
       .from("documents")
-      .update({ status: "used", cpf_extracted: cpf, person_id: newPerson.id })
+      .update({ status: statuses.onSuccess, cpf_extracted: cpf, person_id: newPerson.id })
       .eq("id", dId);
   }
 

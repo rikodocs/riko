@@ -3,27 +3,17 @@
 import { Fragment, useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { gerarCodigo6Digitos } from "@/lib/codigo-acesso";
-import JSZip from "jszip";
 
-// Evita dois arquivos com o mesmo nome dentro do ZIP (um sobrescreveria o outro)
-function uniqueName(name: string, used: Set<string>) {
-  let candidate = name;
-  const dot = name.lastIndexOf(".");
-  const base = dot > 0 ? name.slice(0, dot) : name;
-  const ext = dot > 0 ? name.slice(dot) : "";
-  for (let i = 2; used.has(candidate.toLowerCase()); i++) {
-    candidate = `${base}_${i}${ext}`;
-  }
-  used.add(candidate.toLowerCase());
-  return candidate;
-}
+type Role = "moderador" | "operador";
 
 interface ViewerUserRow {
   id: string;
   code: string;
   name: string;
   active: boolean;
-  pending_count: number;
+  role: Role;
+  in_hands: number;
+  downloaded: number;
 }
 
 interface HistoryRow {
@@ -39,52 +29,64 @@ export default function UsuariosPage() {
   const [users, setUsers] = useState<ViewerUserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
+  const [newRole, setNewRole] = useState<Role>("operador");
   const [creating, setCreating] = useState(false);
-  const [availableCount, setAvailableCount] = useState(0);
-  const [assignTarget, setAssignTarget] = useState<string | null>(null);
-  const [assignAmount, setAssignAmount] = useState("");
-  const [assigning, setAssigning] = useState(false);
+  const [counts, setCounts] = useState({ pending: 0, stock: 0 });
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [historyTarget, setHistoryTarget] = useState<string | null>(null);
   const [historyRows, setHistoryRows] = useState<HistoryRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [zipAmount, setZipAmount] = useState("");
-  const [downloading, setDownloading] = useState(false);
-  const [zipMsg, setZipMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const loadUsers = useCallback(async () => {
-    setLoading(true);
     const { data: viewerUsers } = await supabase
       .from("viewer_users")
-      .select("id, code, name, active")
+      .select("id, code, name, active, role")
+      .order("role", { ascending: true })
       .order("created_at", { ascending: false });
 
     const rows: ViewerUserRow[] = [];
     for (const u of viewerUsers || []) {
-      const { count } = await supabase
-        .from("documents")
-        .select("id", { count: "exact", head: true })
-        .eq("assigned_to", u.id)
-        .eq("status", "available");
-      rows.push({ ...u, pending_count: count || 0 });
+      const role: Role = u.role === "moderador" ? "moderador" : "operador";
+      let inHands = 0;
+      let downloaded = 0;
+      if (role === "operador") {
+        const { count: c1 } = await supabase
+          .from("documents")
+          .select("id", { count: "exact", head: true })
+          .eq("assigned_to", u.id)
+          .eq("status", "available");
+        const { count: c2 } = await supabase
+          .from("documents")
+          .select("id", { count: "exact", head: true })
+          .eq("assigned_to", u.id)
+          .eq("status", "downloaded");
+        inHands = c1 || 0;
+        downloaded = c2 || 0;
+      }
+      rows.push({ ...u, role, in_hands: inHands, downloaded });
     }
     setUsers(rows);
     setLoading(false);
   }, []);
 
-  const loadAvailableCount = useCallback(async () => {
-    const { count } = await supabase
+  const loadCounts = useCallback(async () => {
+    const { count: pending } = await supabase
       .from("documents")
       .select("id", { count: "exact", head: true })
-      .is("assigned_to", null)
-      .eq("status", "available");
-    setAvailableCount(count || 0);
+      .eq("status", "pending_review");
+    const { count: stock } = await supabase
+      .from("documents")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "available")
+      .is("assigned_to", null);
+    setCounts({ pending: pending || 0, stock: stock || 0 });
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadUsers();
-    loadAvailableCount();
-  }, [loadUsers, loadAvailableCount]);
+    loadCounts();
+  }, [loadUsers, loadCounts]);
 
   async function handleCreate() {
     if (!newName.trim()) return;
@@ -92,7 +94,9 @@ export default function UsuariosPage() {
     let code = gerarCodigo6Digitos();
     let created = false;
     for (let attempt = 0; attempt < 5 && !created; attempt++) {
-      const { error } = await supabase.from("viewer_users").insert({ name: newName.trim(), code });
+      const { error } = await supabase
+        .from("viewer_users")
+        .insert({ name: newName.trim(), code, role: newRole });
       if (!error) {
         created = true;
       } else {
@@ -103,7 +107,7 @@ export default function UsuariosPage() {
     setNewName("");
     setMessage(
       created
-        ? { type: "success", text: `Usuário criado com código ${code}` }
+        ? { type: "success", text: `${newRole === "moderador" ? "Moderador" : "Operador"} criado com código ${code}` }
         : { type: "error", text: "Não foi possível gerar um código único, tente de novo." }
     );
     loadUsers();
@@ -112,115 +116,6 @@ export default function UsuariosPage() {
   async function handleToggleActive(user: ViewerUserRow) {
     await supabase.from("viewer_users").update({ active: !user.active }).eq("id", user.id);
     loadUsers();
-  }
-
-  async function handleAssign(userId: string) {
-    const amount = parseInt(assignAmount, 10);
-    if (!amount || amount < 1) return;
-    setAssigning(true);
-
-    const { data: available } = await supabase
-      .from("documents")
-      .select("id")
-      .is("assigned_to", null)
-      .eq("status", "available")
-      .order("created_at", { ascending: true })
-      .limit(amount);
-
-    if (available && available.length > 0) {
-      const ids = available.map((d) => d.id);
-      await supabase
-        .from("documents")
-        .update({ assigned_to: userId, assigned_at: new Date().toISOString() })
-        .in("id", ids);
-      setMessage({ type: "success", text: `${ids.length} documento(s) atribuído(s).` });
-    } else {
-      setMessage({ type: "error", text: "Nenhum documento disponível." });
-    }
-
-    setAssigning(false);
-    setAssignTarget(null);
-    setAssignAmount("");
-    loadUsers();
-    loadAvailableCount();
-  }
-
-  // Baixa um ZIP com N documentos do estoque livre (mesma ordem do Atribuir:
-  // mais antigos primeiro) e tira eles do estoque marcando como "downloaded".
-  async function handleDownloadZip() {
-    const amount = parseInt(zipAmount, 10);
-    if (!amount || amount < 1) return;
-    if (amount > availableCount) {
-      setZipMsg({ type: "error", text: `Só existem ${availableCount} documento(s) disponível(is).` });
-      return;
-    }
-    setDownloading(true);
-    setZipMsg(null);
-
-    try {
-      const { data: docs, error } = await supabase
-        .from("documents")
-        .select("id, file_name, file_url")
-        .is("assigned_to", null)
-        .eq("status", "available")
-        .order("created_at", { ascending: true })
-        .limit(amount);
-      if (error) throw new Error(error.message);
-      if (!docs || docs.length === 0) throw new Error("Nenhum documento disponível.");
-
-      const zip = new JSZip();
-      const usedNames = new Set<string>();
-      const zippedIds: string[] = [];
-
-      for (const doc of docs) {
-        if (!doc.file_url) continue;
-        try {
-          const res = await fetch(doc.file_url);
-          if (!res.ok) continue;
-          const blob = await res.blob();
-          zip.file(uniqueName(doc.file_name || "documento", usedNames), blob);
-          zippedIds.push(doc.id);
-        } catch {
-          // Arquivo que falhar fica no estoque
-        }
-      }
-
-      if (zippedIds.length === 0) throw new Error("Não foi possível baixar nenhum arquivo.");
-
-      const zipBlob = await zip.generateAsync({ type: "blob" });
-      const now = new Date();
-      const dd = String(now.getDate()).padStart(2, "0");
-      const mm = String(now.getMonth() + 1).padStart(2, "0");
-      const yy = String(now.getFullYear()).slice(-2);
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${zippedIds.length}docs${dd}${mm}${yy}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      const { error: updateError } = await supabase
-        .from("documents")
-        .update({ status: "downloaded", downloaded_at: now.toISOString() })
-        .in("id", zippedIds)
-        .eq("status", "available")
-        .is("assigned_to", null);
-      if (updateError) throw new Error(`ZIP baixado, mas não marcou como baixado: ${updateError.message}`);
-
-      const skipped = docs.length - zippedIds.length;
-      setZipMsg({
-        type: "success",
-        text: `${zippedIds.length} documento(s) baixado(s)${skipped ? ` (${skipped} falharam e continuam no estoque)` : ""}.`,
-      });
-      setZipAmount("");
-    } catch (err) {
-      setZipMsg({ type: "error", text: err instanceof Error ? err.message : "Erro ao gerar ZIP" });
-    } finally {
-      setDownloading(false);
-      loadAvailableCount();
-    }
   }
 
   async function handleToggleHistory(userId: string) {
@@ -249,66 +144,42 @@ export default function UsuariosPage() {
             Novo usuário
           </h2>
           <p className="text-text-tertiary text-xs mt-0.5">
-            {availableCount} documento(s) disponível(is) no estoque
+            {counts.pending} aguardando moderação · {counts.stock} aprovado(s) no estoque
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <input
             type="text"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            placeholder="Nome do usuário"
+            placeholder="Nome"
             className="input-base flex-1"
           />
+          <div className="inline-flex rounded-md border border-surface-border bg-surface-1 p-1 gap-1">
+            {(["operador", "moderador"] as Role[]).map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setNewRole(r)}
+                aria-pressed={newRole === r}
+                className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                  newRole === r ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
+                }`}
+              >
+                {r === "operador" ? "Operador" : "Moderador"}
+              </button>
+            ))}
+          </div>
           <button onClick={handleCreate} disabled={creating || !newName.trim()} className="btn-primary">
             Criar
           </button>
         </div>
+        <p className="text-[11px] text-text-disabled">
+          Moderador revisa os documentos e distribui pros operadores. Operador só recebe e baixa.
+        </p>
         {message && (
           <p className={`text-xs font-medium ${message.type === "success" ? "text-success" : "text-danger"}`}>
             {message.text}
-          </p>
-        )}
-      </div>
-
-      <div className="glass-static rounded-lg p-6 space-y-4">
-        <div>
-          <h2 className="text-[15px] font-semibold text-text-primary" style={{ fontFamily: "var(--font-heading)" }}>
-            Baixar ZIP
-          </h2>
-          <p className="text-text-tertiary text-xs mt-0.5">
-            Baixa documentos do estoque livre e marca eles como baixados (saem do estoque)
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <input
-            type="number"
-            min={1}
-            max={availableCount}
-            value={zipAmount}
-            onChange={(e) => setZipAmount(e.target.value)}
-            placeholder={availableCount > 0 ? `1-${availableCount}` : "0"}
-            disabled={downloading || availableCount === 0}
-            className="input-base w-28 mono-input text-center"
-          />
-          <button
-            onClick={handleDownloadZip}
-            disabled={downloading || !zipAmount || parseInt(zipAmount, 10) < 1 || availableCount === 0}
-            className="btn-primary"
-          >
-            {downloading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
-                Baixando...
-              </>
-            ) : (
-              "Baixar ZIP"
-            )}
-          </button>
-        </div>
-        {zipMsg && (
-          <p className={`text-xs font-medium ${zipMsg.type === "success" ? "text-success" : "text-danger"}`}>
-            {zipMsg.text}
           </p>
         )}
       </div>
@@ -323,10 +194,11 @@ export default function UsuariosPage() {
             <thead>
               <tr className="text-left text-text-tertiary text-xs uppercase tracking-wider border-b border-surface-border">
                 <th className="p-4">Nome</th>
+                <th className="p-4">Papel</th>
                 <th className="p-4">Código</th>
                 <th className="p-4">Em mãos</th>
+                <th className="p-4">Baixados</th>
                 <th className="p-4">Status</th>
-                <th className="p-4"></th>
                 <th className="p-4"></th>
               </tr>
             </thead>
@@ -335,8 +207,14 @@ export default function UsuariosPage() {
                 <Fragment key={u.id}>
                   <tr className="border-b border-surface-border last:border-0">
                     <td className="p-4 text-text-primary">{u.name}</td>
+                    <td className="p-4">
+                      <span className={`badge ${u.role === "moderador" ? "badge-primary" : "badge-warning"}`}>
+                        {u.role === "moderador" ? "Moderador" : "Operador"}
+                      </span>
+                    </td>
                     <td className="p-4 font-mono text-text-secondary">{u.code}</td>
-                    <td className="p-4 text-text-secondary">{u.pending_count}</td>
+                    <td className="p-4 text-text-secondary font-mono">{u.role === "operador" ? u.in_hands : "—"}</td>
+                    <td className="p-4 text-text-tertiary font-mono">{u.role === "operador" ? u.downloaded : "—"}</td>
                     <td className="p-4">
                       <button
                         onClick={() => handleToggleActive(u)}
@@ -346,47 +224,20 @@ export default function UsuariosPage() {
                       </button>
                     </td>
                     <td className="p-4">
-                      {assignTarget === u.id ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            min={1}
-                            max={availableCount}
-                            value={assignAmount}
-                            onChange={(e) => setAssignAmount(e.target.value)}
-                            className="input-base w-20 mono-input"
-                            placeholder="qtd"
-                          />
-                          <button
-                            onClick={() => handleAssign(u.id)}
-                            disabled={assigning}
-                            className="btn-primary text-xs px-3 py-1.5"
-                          >
-                            Confirmar
-                          </button>
-                          <button onClick={() => setAssignTarget(null)} className="btn-ghost text-xs px-3 py-1.5">
-                            Cancelar
-                          </button>
-                        </div>
-                      ) : (
-                        <button onClick={() => setAssignTarget(u.id)} className="btn-ghost text-xs px-3 py-1.5">
-                          Atribuir
+                      {u.role === "moderador" && (
+                        <button onClick={() => handleToggleHistory(u.id)} className="btn-ghost text-xs px-3 py-1.5">
+                          {historyTarget === u.id ? "Fechar histórico" : "Histórico"}
                         </button>
                       )}
-                    </td>
-                    <td className="p-4">
-                      <button onClick={() => handleToggleHistory(u.id)} className="btn-ghost text-xs px-3 py-1.5">
-                        {historyTarget === u.id ? "Fechar histórico" : "Histórico"}
-                      </button>
                     </td>
                   </tr>
                   {historyTarget === u.id && (
                     <tr className="border-b border-surface-border last:border-0">
-                      <td colSpan={6} className="p-4 bg-surface-0">
+                      <td colSpan={7} className="p-4 bg-surface-0">
                         {historyLoading ? (
                           <p className="text-text-tertiary text-xs">Carregando histórico...</p>
                         ) : historyRows.length === 0 ? (
-                          <p className="text-text-tertiary text-xs">Nenhum documento revisado por esse usuário ainda.</p>
+                          <p className="text-text-tertiary text-xs">Nenhum documento moderado por esse usuário ainda.</p>
                         ) : (
                           <table className="w-full text-xs">
                             <thead>
@@ -400,9 +251,7 @@ export default function UsuariosPage() {
                             <tbody>
                               {historyRows.map((h) => (
                                 <tr key={h.id} className="border-t border-surface-border">
-                                  <td className="py-2 pr-4 text-text-secondary">
-                                    {h.documents?.file_name || "—"}
-                                  </td>
+                                  <td className="py-2 pr-4 text-text-secondary">{h.documents?.file_name || "—"}</td>
                                   <td className="py-2 pr-4 font-mono text-text-secondary">{h.cpf || "—"}</td>
                                   <td className="py-2 pr-4">
                                     <span
@@ -415,10 +264,10 @@ export default function UsuariosPage() {
                                       }`}
                                     >
                                       {h.action === "accepted"
-                                        ? "Aceito"
+                                        ? "Aprovado"
                                         : h.reason === "duplicate"
-                                        ? "Rejeitado (duplicado)"
-                                        : "Rejeitado"}
+                                        ? "Recusado (duplicado)"
+                                        : "Recusado"}
                                     </span>
                                   </td>
                                   <td className="py-2 text-text-tertiary">

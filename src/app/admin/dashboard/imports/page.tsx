@@ -25,7 +25,7 @@ export default function ImportsPage() {
     const { data } = await supabase
       .from("documents")
       .select("id, file_name, status, created_at")
-      .in("status", ["available", "used", "rejected", "downloaded"])
+      .in("status", ["pending_review", "available", "used", "rejected", "rejected_mod", "downloaded"])
       .order("created_at", { ascending: false })
       .limit(20);
     if (data) setRecentDocs(data);
@@ -84,7 +84,7 @@ export default function ImportsPage() {
             file_path: fileName,
             file_url: urlData.publicUrl,
             file_type: file.type,
-            status: "available",
+            status: "pending_review",
           });
 
           return !insertError;
@@ -191,9 +191,11 @@ export default function ImportsPage() {
 
   const statusBadge = (status: string) => {
     const config: Record<string, { cls: string; label: string }> = {
-      available: { cls: "badge-warning", label: "Disponível" },
+      pending_review: { cls: "badge-warning", label: "Aguardando moderação" },
+      available: { cls: "badge-success", label: "Aprovado" },
       used: { cls: "badge-success", label: "Usado" },
       rejected: { cls: "badge-danger", label: "Rejeitado" },
+      rejected_mod: { cls: "badge-danger", label: "Recusado (mod.)" },
       downloaded: { cls: "badge-primary", label: "Baixado" },
     };
     const c = config[status] || { cls: "", label: status };

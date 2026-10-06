@@ -17,14 +17,15 @@ export async function GET(
 
     const { data: doc, error: docError } = await supabase
       .from("documents")
-      .select("id, file_path, file_type, assigned_to")
+      .select("id, file_path, file_type, assigned_to, review_claimed_by")
       .eq("id", id)
       .single();
 
     if (docError || !doc) {
       return NextResponse.json({ error: "Documento não encontrado." }, { status: 404 });
     }
-    if (doc.assigned_to !== viewerId) {
+    // Operador vê o que foi atribuído a ele; moderador vê o que está revisando
+    if (doc.assigned_to !== viewerId && doc.review_claimed_by !== viewerId) {
       return NextResponse.json({ error: "Sem acesso a este documento." }, { status: 403 });
     }
 

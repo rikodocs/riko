@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
 import { salvarPessoaConsultada, type PersonFields } from "@/lib/consulta";
+import { getViewerRole } from "@/lib/viewer-role";
 
 interface CpfEntry {
   cpf: string;
@@ -16,6 +17,8 @@ interface CpfResult {
   message: string;
 }
 
+// Moderador confirmou os dados: salva a(s) pessoa(s) e o documento vai pro
+// estoque ("available"), já com a pessoa vinculada.
 export async function POST(request: Request) {
   try {
     const supabase = createServerClient();
@@ -29,26 +32,26 @@ export async function POST(request: Request) {
     if (!viewerId || !documentId || !Array.isArray(entries) || entries.length === 0) {
       return NextResponse.json({ error: "Dados incompletos." }, { status: 400 });
     }
+    if ((await getViewerRole(supabase, viewerId)) !== "moderador") {
+      return NextResponse.json({ error: "Acesso restrito a moderadores." }, { status: 403 });
+    }
 
     const { data: doc, error: docError } = await supabase
       .from("documents")
-      .select("id, assigned_to, status")
+      .select("id, status, review_claimed_by")
       .eq("id", documentId)
       .single();
 
     if (docError || !doc) {
       return NextResponse.json({ error: "Documento não encontrado." }, { status: 404 });
     }
-    if (doc.assigned_to !== viewerId) {
-      return NextResponse.json({ error: "Documento não está atribuído a você." }, { status: 403 });
+    if (doc.status !== "pending_review") {
+      return NextResponse.json({ error: "Este documento já foi moderado." }, { status: 409 });
     }
-    if (doc.status !== "available") {
-      return NextResponse.json({ error: "Documento já foi processado." }, { status: 409 });
+    if (doc.review_claimed_by !== viewerId) {
+      return NextResponse.json({ error: "Este documento está com outro moderador." }, { status: 409 });
     }
 
-    // Os dados já foram buscados e mostrados pro viewer confirmar em
-    // /api/viewer/consultar-preview — aqui só grava, re-checando duplicado
-    // por segurança (pode ter mudado entre a prévia e a confirmação).
     const results: CpfResult[] = [];
     for (const entry of entries) {
       const result = await salvarPessoaConsultada(
@@ -56,7 +59,8 @@ export async function POST(request: Request) {
         entry.cpf,
         [documentId],
         entry.fields,
-        entry.rawData
+        entry.rawData,
+        { onSuccess: "available", onDuplicate: null }
       );
       results.push({
         cpf: entry.cpf,
@@ -64,13 +68,15 @@ export async function POST(request: Request) {
         duplicate: result.duplicate ?? false,
         message: result.message,
       });
-      await supabase.from("document_reviews").insert({
-        document_id: documentId,
-        viewer_id: viewerId,
-        cpf: entry.cpf,
-        action: "accepted",
-        person_id: result.personId ?? null,
-      });
+      if (result.ok) {
+        await supabase.from("document_reviews").insert({
+          document_id: documentId,
+          viewer_id: viewerId,
+          cpf: entry.cpf,
+          action: "accepted",
+          person_id: result.personId ?? null,
+        });
+      }
     }
 
     const anySuccess = results.some((r) => r.ok);
@@ -81,6 +87,16 @@ export async function POST(request: Request) {
         { status: anyDuplicate ? 409 : 400 }
       );
     }
+
+    await supabase
+      .from("documents")
+      .update({
+        moderated_by: viewerId,
+        moderated_at: new Date().toISOString(),
+        review_claimed_by: null,
+        review_claimed_at: null,
+      })
+      .eq("id", documentId);
 
     return NextResponse.json({ ok: true, results });
   } catch (err) {

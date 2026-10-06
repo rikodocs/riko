@@ -1,8 +1,15 @@
 const STORAGE_KEY = "viewer_auth";
 
+export type ViewerRole = "moderador" | "operador";
+
 export interface ViewerSession {
   id: string;
   name: string;
+  role: ViewerRole;
+}
+
+export function homeForRole(role: ViewerRole): string {
+  return role === "moderador" ? "/moderador" : "/operacao";
 }
 
 export function getViewerSession(): ViewerSession | null {
@@ -10,7 +17,10 @@ export function getViewerSession(): ViewerSession | null {
   const raw = sessionStorage.getItem(STORAGE_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as ViewerSession;
+    const parsed = JSON.parse(raw) as Partial<ViewerSession>;
+    // Sessão antiga (antes dos papéis) não tem role — força novo login
+    if (!parsed.id || !parsed.name || !parsed.role) return null;
+    return parsed as ViewerSession;
   } catch {
     return null;
   }

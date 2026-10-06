@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
+import { getViewerRole } from "@/lib/viewer-role";
 
+// Recusa do moderador: o documento vira "rejected_mod" e fica anotado quem
+// recusou e por quê. Nada é apagado do Storage.
 export async function POST(request: Request) {
   try {
     const supabase = createServerClient();
@@ -15,29 +18,41 @@ export async function POST(request: Request) {
     if (!viewerId || !documentId) {
       return NextResponse.json({ error: "Dados incompletos." }, { status: 400 });
     }
+    if ((await getViewerRole(supabase, viewerId)) !== "moderador") {
+      return NextResponse.json({ error: "Acesso restrito a moderadores." }, { status: 403 });
+    }
 
     const { data: doc, error: docError } = await supabase
       .from("documents")
-      .select("id, assigned_to, status")
+      .select("id, status, review_claimed_by")
       .eq("id", documentId)
       .single();
 
     if (docError || !doc) {
       return NextResponse.json({ error: "Documento não encontrado." }, { status: 404 });
     }
-    if (doc.assigned_to !== viewerId) {
-      return NextResponse.json({ error: "Documento não está atribuído a você." }, { status: 403 });
+    if (doc.status !== "pending_review") {
+      return NextResponse.json({ error: "Este documento já foi moderado." }, { status: 409 });
     }
-    if (doc.status !== "available") {
-      return NextResponse.json({ error: "Documento já foi processado." }, { status: 409 });
+    if (doc.review_claimed_by !== viewerId) {
+      return NextResponse.json({ error: "Este documento está com outro moderador." }, { status: 409 });
     }
 
-    // Recusa é definitiva: o documento vira "rejected" e não volta pro
-    // estoque disponível. Mantém assigned_to como registro de quem recusou.
+    const rejectReason = reason === "duplicate" ? "duplicate" : "invalid";
+
     const { error: updateError } = await supabase
       .from("documents")
-      .update({ status: "rejected" })
-      .eq("id", documentId);
+      .update({
+        status: "rejected_mod",
+        reject_reason: rejectReason,
+        cpf_extracted: cpf || null,
+        moderated_by: viewerId,
+        moderated_at: new Date().toISOString(),
+        review_claimed_by: null,
+        review_claimed_at: null,
+      })
+      .eq("id", documentId)
+      .eq("status", "pending_review");
 
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
@@ -48,7 +63,7 @@ export async function POST(request: Request) {
       viewer_id: viewerId,
       cpf: cpf || null,
       action: "rejected",
-      reason: reason === "duplicate" ? "duplicate" : null,
+      reason: rejectReason === "duplicate" ? "duplicate" : null,
     });
 
     return NextResponse.json({ ok: true });

@@ -18,18 +18,19 @@ export async function POST(request: Request) {
 
     const { data: doc, error: docError } = await supabase
       .from("documents")
-      .select("id, assigned_to, status")
+      .select("id, review_claimed_by, status")
       .eq("id", documentId)
       .single();
 
     if (docError || !doc) {
       return NextResponse.json({ error: "Documento não encontrado." }, { status: 404 });
     }
-    if (doc.assigned_to !== viewerId) {
-      return NextResponse.json({ error: "Documento não está atribuído a você." }, { status: 403 });
+    // Quem consulta agora é o moderador, no documento que ele travou pra revisar
+    if (doc.status !== "pending_review") {
+      return NextResponse.json({ error: "Este documento já foi moderado." }, { status: 409 });
     }
-    if (doc.status !== "available") {
-      return NextResponse.json({ error: "Documento já foi processado." }, { status: 409 });
+    if (doc.review_claimed_by !== viewerId) {
+      return NextResponse.json({ error: "Este documento está com outro moderador." }, { status: 403 });
     }
 
     const { data: settings, error: settingsError } = await supabase

@@ -4,73 +4,57 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 interface Stats {
-  available: number;
-  withUsers: number;
-  rejected: number;
-  used: number;
+  pending: number;
+  approved: number;
+  withOperators: number;
   downloaded: number;
+  rejectedMod: number;
   total: number;
 }
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<Stats>({ available: 0, withUsers: 0, rejected: 0, used: 0, downloaded: 0, total: 0 });
+  const [stats, setStats] = useState<Stats>({
+    pending: 0,
+    approved: 0,
+    withOperators: 0,
+    downloaded: 0,
+    rejectedMod: 0,
+    total: 0,
+  });
 
   useEffect(() => {
     loadStats();
   }, []);
 
+  async function count(apply: (q: ReturnType<typeof base>) => ReturnType<typeof base>) {
+    const { count: c } = await apply(base());
+    return c || 0;
+  }
+
+  function base() {
+    return supabase.from("documents").select("id", { count: "exact", head: true });
+  }
+
   async function loadStats() {
-    // "Disponíveis" = estoque livre de verdade, ainda não atribuído a
-    // ninguém. Documento atribuído a um usuário (aguardando ele decidir)
-    // não conta mais aqui — só aparece em "Com usuários" e no "Em mãos"
-    // de cada um, em Usuários.
-    const { count: availableCount } = await supabase
-      .from("documents")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "available")
-      .is("assigned_to", null);
-
-    const { count: withUsersCount } = await supabase
-      .from("documents")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "available")
-      .not("assigned_to", "is", null);
-
-    const { count: rejectedCount } = await supabase
-      .from("documents")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "rejected");
-
-    const { count: usedCount } = await supabase
-      .from("documents")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "used");
-
-    const { count: downloadedCount } = await supabase
-      .from("documents")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "downloaded");
-
-    const { count: totalCount } = await supabase
-      .from("documents")
-      .select("id", { count: "exact", head: true });
-
-    setStats({
-      available: availableCount || 0,
-      withUsers: withUsersCount || 0,
-      rejected: rejectedCount || 0,
-      used: usedCount || 0,
-      downloaded: downloadedCount || 0,
-      total: totalCount || 0,
-    });
+    // Fluxo: upload -> aguardando moderação -> aprovado (estoque) ->
+    // com operador -> baixado. Recusado pelo moderador fica anotado à parte.
+    const [pending, approved, withOperators, downloaded, rejectedMod, total] = await Promise.all([
+      count((q) => q.eq("status", "pending_review")),
+      count((q) => q.eq("status", "available").is("assigned_to", null)),
+      count((q) => q.eq("status", "available").not("assigned_to", "is", null)),
+      count((q) => q.eq("status", "downloaded")),
+      count((q) => q.eq("status", "rejected_mod")),
+      count((q) => q),
+    ]);
+    setStats({ pending, approved, withOperators, downloaded, rejectedMod, total });
   }
 
   const statCards = [
-    { label: "Disponíveis", value: stats.available, color: "text-warning" },
-    { label: "Com usuários", value: stats.withUsers, color: "text-primary" },
-    { label: "Rejeitados", value: stats.rejected, color: "text-danger" },
-    { label: "Usados", value: stats.used, color: "text-success" },
+    { label: "Aguardando moderação", value: stats.pending, color: "text-warning" },
+    { label: "Aprovados", value: stats.approved, color: "text-success" },
+    { label: "Com operadores", value: stats.withOperators, color: "text-primary" },
     { label: "Baixados", value: stats.downloaded, color: "text-text-secondary" },
+    { label: "Recusados (mod.)", value: stats.rejectedMod, color: "text-danger" },
     { label: "Total", value: stats.total, color: "text-text-primary" },
   ];
 
@@ -107,10 +91,10 @@ export default function DashboardPage() {
           Como funciona agora
         </h2>
         <p className="text-text-tertiary text-xs mt-1 leading-relaxed">
-          Envie os documentos em &quot;Imports&quot; — eles ficam disponíveis automaticamente,
-          sem nenhum processamento automático. Em &quot;Usuários&quot;, atribua documentos
-          disponíveis a um usuário: ele revisa pelo código dele em <code>/</code>, e cada
-          documento vira &quot;Usado&quot; (CPF confirmado e pessoa cadastrada) ou &quot;Rejeitado&quot;.
+          Envie os documentos em &quot;Imports&quot; — eles entram na fila de moderação. O
+          moderador (código dele em <code>/</code>) digita o CPF, consulta, salva a pessoa e
+          aprova ou recusa. Depois ele distribui os aprovados pros operadores, que recebem tudo
+          pronto em <code>/operacao</code> e baixam.
         </p>
       </div>
     </div>

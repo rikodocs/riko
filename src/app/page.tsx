@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getViewerSession, setViewerSession } from "@/lib/viewer-session";
+import { getViewerSession, setViewerSession, homeForRole } from "@/lib/viewer-session";
 
 export default function ViewerLoginPage() {
   const [pin, setPin] = useState<string[]>(Array(6).fill(""));
@@ -13,8 +13,9 @@ export default function ViewerLoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (getViewerSession()) {
-      router.push("/painel");
+    const existing = getViewerSession();
+    if (existing) {
+      router.push(homeForRole(existing.role));
     }
     inputRefs.current[0]?.focus();
   }, [router]);
@@ -52,13 +53,14 @@ export default function ViewerLoginPage() {
     setLoading(true);
     const { data } = await supabase
       .from("viewer_users")
-      .select("id, name, active")
+      .select("id, name, active, role")
       .eq("code", fullPin)
       .single();
 
     if (data && data.active) {
-      setViewerSession({ id: data.id, name: data.name });
-      router.push("/painel");
+      const role = data.role === "moderador" ? "moderador" : "operador";
+      setViewerSession({ id: data.id, name: data.name, role });
+      router.push(homeForRole(role));
     } else {
       setError(true);
       setPin(Array(6).fill(""));
