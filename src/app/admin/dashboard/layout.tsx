@@ -42,6 +42,15 @@ const navItems = [
     ),
   },
   {
+    label: "Recusados",
+    href: "/admin/dashboard/recusados",
+    icon: (
+      <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+      </svg>
+    ),
+  },
+  {
     label: "Filtros",
     href: "/admin/dashboard/filtros",
     icon: (
