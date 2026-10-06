@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getViewerSession, clearViewerSession, homeForRole, type ViewerSession } from "@/lib/viewer-session";
 import DocumentCard from "@/components/DocumentCard";
+import SitesPanel from "@/components/SitesPanel";
 
 interface QueueDoc {
   id: string;
@@ -20,7 +21,7 @@ interface OperatorRow {
   downloaded: number;
 }
 
-type Tab = "revisar" | "distribuir";
+type Tab = "revisar" | "distribuir" | "sites";
 
 export default function ModeradorPage() {
   const router = useRouter();
@@ -209,6 +210,15 @@ export default function ModeradorPage() {
           >
             Distribuir
           </button>
+          <button
+            type="button"
+            onClick={() => setTab("sites")}
+            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
+              tab === "sites" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
+            }`}
+          >
+            Sites
+          </button>
         </div>
       </div>
 
@@ -225,7 +235,9 @@ export default function ModeradorPage() {
           </div>
         )}
 
-        {tab === "revisar" ? (
+        {tab === "sites" ? (
+          <SitesPanel viewerId={session.id} canEdit />
+        ) : tab === "revisar" ? (
           <>
             <div className="w-full max-w-xl flex items-center justify-between text-[11px] text-text-tertiary font-mono mb-3">
               <span>{pending} na fila</span>

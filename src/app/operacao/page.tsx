@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import JSZip from "jszip";
 import { supabase } from "@/lib/supabase";
+import SitesPanel from "@/components/SitesPanel";
 import { getViewerSession, clearViewerSession, homeForRole, type ViewerSession } from "@/lib/viewer-session";
 
 interface PersonData {
@@ -32,7 +33,7 @@ interface OpDoc {
   person: PersonData | null;
 }
 
-type Tab = "novos" | "baixados";
+type Tab = "novos" | "baixados" | "sites";
 
 function formatCpf(cpf: string) {
   const d = (cpf || "").replace(/\D/g, "");
@@ -317,6 +318,15 @@ export default function OperacaoPage() {
           >
             Baixados <span className="ml-1 font-mono text-[10px] opacity-70">{baixados.length}</span>
           </button>
+          <button
+            type="button"
+            onClick={() => setTab("sites")}
+            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
+              tab === "sites" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
+            }`}
+          >
+            Sites
+          </button>
         </div>
 
         {tab === "novos" && novos.length > 0 && (
@@ -350,7 +360,9 @@ export default function OperacaoPage() {
           </div>
         )}
 
-        {loading ? (
+        {tab === "sites" ? (
+          <SitesPanel viewerId={session.id} canEdit={false} />
+        ) : loading ? (
           <p className="text-text-tertiary text-sm text-center mt-10">Carregando...</p>
         ) : loadError ? (
           <div className="glass-static rounded-lg p-8 text-center">
