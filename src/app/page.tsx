@@ -9,6 +9,10 @@ export default function ViewerLoginPage() {
   const [pin, setPin] = useState<string[]>(Array(6).fill(""));
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<"code" | "email">("code");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const router = useRouter();
 
@@ -69,6 +73,28 @@ export default function ViewerLoginPage() {
     }
   };
 
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !password) return;
+    setLoading(true);
+    setEmailError(null);
+    try {
+      const res = await fetch("/api/moderador/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Não foi possível entrar.");
+      setViewerSession({ id: body.id, name: body.name, role: "moderador" });
+      router.push(homeForRole("moderador"));
+    } catch (err) {
+      setEmailError(err instanceof Error ? err.message : "Não foi possível entrar.");
+      setPassword("");
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center relative overflow-hidden noise">
       <div className="absolute inset-0 grid-bg" />
@@ -90,9 +116,50 @@ export default function ViewerLoginPage() {
             >
               Acesso
             </p>
-            <p className="text-text-tertiary text-xs">Digite seu código de 6 dígitos</p>
+            <p className="text-text-tertiary text-xs">
+              {mode === "code" ? "Digite seu código de 6 dígitos" : "Entre com seu e-mail e senha"}
+            </p>
           </div>
 
+          {mode === "email" ? (
+            <form onSubmit={handleEmailLogin} className="flex flex-col gap-3 w-full">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setEmailError(null);
+                }}
+                placeholder="E-mail"
+                autoComplete="username"
+                disabled={loading}
+                className="input-base w-full"
+                autoFocus
+              />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setEmailError(null);
+                }}
+                placeholder="Senha"
+                autoComplete="current-password"
+                disabled={loading}
+                className="input-base w-full"
+              />
+              {emailError && (
+                <div className="flex items-center gap-2 animate-fade-in">
+                  <div className="w-1.5 h-1.5 rounded-full bg-danger" />
+                  <p className="text-danger text-xs font-medium">{emailError}</p>
+                </div>
+              )}
+              <button type="submit" disabled={loading || !email.trim() || !password} className="btn-primary w-full">
+                Entrar
+              </button>
+            </form>
+          ) : (
+            <>
           <div className="flex gap-3" onPaste={handlePaste}>
             {pin.map((digit, index) => (
               <input
@@ -121,6 +188,20 @@ export default function ViewerLoginPage() {
               <p className="text-danger text-xs font-medium">Código inválido</p>
             </div>
           )}
+            </>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              setMode(mode === "code" ? "email" : "code");
+              setError(false);
+              setEmailError(null);
+            }}
+            className="text-[11px] text-text-tertiary hover:text-primary transition-colors"
+          >
+            {mode === "code" ? "Sou moderador — entrar com e-mail e senha" : "Voltar pro código de acesso"}
+          </button>
 
           {loading && (
             <div className="flex items-center gap-2">

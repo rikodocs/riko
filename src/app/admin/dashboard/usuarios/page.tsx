@@ -12,6 +12,7 @@ interface ViewerUserRow {
   name: string;
   active: boolean;
   role: Role;
+  email: string | null;
   in_hands: number;
   downloaded: number;
 }
@@ -30,6 +31,8 @@ export default function UsuariosPage() {
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState<Role>("operador");
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [creating, setCreating] = useState(false);
   const [counts, setCounts] = useState({ pending: 0, stock: 0 });
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -40,7 +43,7 @@ export default function UsuariosPage() {
   const loadUsers = useCallback(async () => {
     const { data: viewerUsers } = await supabase
       .from("viewer_users")
-      .select("id, code, name, active, role")
+      .select("id, code, name, active, role, email")
       .order("role", { ascending: true })
       .order("created_at", { ascending: false });
 
@@ -91,12 +94,38 @@ export default function UsuariosPage() {
   async function handleCreate() {
     if (!newName.trim()) return;
     setCreating(true);
+    setMessage(null);
+
+    if (newRole === "moderador") {
+      try {
+        const res = await fetch("/api/admin/criar-moderador", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: newName, email: newEmail, password: newPassword }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "Erro ao criar moderador.");
+        setMessage({
+          type: "success",
+          text: body.updated ? "Moderador já existia — dados e senha atualizados." : "Moderador criado. Ele entra com e-mail e senha.",
+        });
+        setNewName("");
+        setNewEmail("");
+        setNewPassword("");
+      } catch (err) {
+        setMessage({ type: "error", text: err instanceof Error ? err.message : "Erro ao criar moderador." });
+      }
+      setCreating(false);
+      loadUsers();
+      return;
+    }
+
     let code = gerarCodigo6Digitos();
     let created = false;
     for (let attempt = 0; attempt < 5 && !created; attempt++) {
       const { error } = await supabase
         .from("viewer_users")
-        .insert({ name: newName.trim(), code, role: newRole });
+        .insert({ name: newName.trim(), code, role: "operador" });
       if (!error) {
         created = true;
       } else {
@@ -107,7 +136,7 @@ export default function UsuariosPage() {
     setNewName("");
     setMessage(
       created
-        ? { type: "success", text: `${newRole === "moderador" ? "Moderador" : "Operador"} criado com código ${code}` }
+        ? { type: "success", text: `Operador criado com código ${code}` }
         : { type: "error", text: "Não foi possível gerar um código único, tente de novo." }
     );
     loadUsers();
@@ -170,10 +199,34 @@ export default function UsuariosPage() {
               </button>
             ))}
           </div>
-          <button onClick={handleCreate} disabled={creating || !newName.trim()} className="btn-primary">
+          <button
+            onClick={handleCreate}
+            disabled={creating || !newName.trim() || (newRole === "moderador" && (!newEmail.trim() || newPassword.length < 4))}
+            className="btn-primary"
+          >
             Criar
           </button>
         </div>
+        {newRole === "moderador" && (
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input
+              type="email"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              placeholder="E-mail do moderador"
+              autoComplete="off"
+              className="input-base flex-1"
+            />
+            <input
+              type="text"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Senha (mín. 4)"
+              autoComplete="off"
+              className="input-base flex-1"
+            />
+          </div>
+        )}
         <p className="text-[11px] text-text-disabled">
           Moderador revisa os documentos e distribui pros operadores. Operador só recebe e baixa.
         </p>
@@ -195,7 +248,7 @@ export default function UsuariosPage() {
               <tr className="text-left text-text-tertiary text-xs uppercase tracking-wider border-b border-surface-border">
                 <th className="p-4">Nome</th>
                 <th className="p-4">Papel</th>
-                <th className="p-4">Código</th>
+                <th className="p-4">Acesso</th>
                 <th className="p-4">Em mãos</th>
                 <th className="p-4">Baixados</th>
                 <th className="p-4">Status</th>
@@ -212,7 +265,7 @@ export default function UsuariosPage() {
                         {u.role === "moderador" ? "Moderador" : "Operador"}
                       </span>
                     </td>
-                    <td className="p-4 font-mono text-text-secondary">{u.code}</td>
+                    <td className="p-4 font-mono text-text-secondary text-xs">{u.role === "moderador" ? u.email || "—" : u.code}</td>
                     <td className="p-4 text-text-secondary font-mono">{u.role === "operador" ? u.in_hands : "—"}</td>
                     <td className="p-4 text-text-tertiary font-mono">{u.role === "operador" ? u.downloaded : "—"}</td>
                     <td className="p-4">
