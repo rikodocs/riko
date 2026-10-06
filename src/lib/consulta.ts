@@ -150,16 +150,39 @@ export async function buscarDadosBrutos(cpf: string, settings: ConsultaSettings)
       ? `${SUPREMO_BASE_URL}${cpf}`
       : `${settings.api_url}?token=${settings.api_token}&modulo=cpf&consulta=${cpf}`;
 
-  const apiRes = await fetch(apiUrl, {
-    method: "GET",
-    headers: { Accept: "application/json" },
-  });
+  // Falha de rede/timeout não pode derrubar a consulta: devolve ok:false pra
+  // tela mostrar "API indisponível" e deixar salvar só com o CPF. Tenta 2x
+  // porque a falha costuma ser momentânea.
+  let apiRes: Response | null = null;
+  let networkError = "";
+  for (let attempt = 0; attempt < 2 && !apiRes; attempt++) {
+    try {
+      apiRes = await fetch(apiUrl, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(15000),
+        cache: "no-store",
+      });
+    } catch (err) {
+      networkError = err instanceof Error ? err.message : "erro de rede";
+    }
+  }
+
+  if (!apiRes) {
+    return { ok: false, message: `API de consulta indisponível (${networkError})` };
+  }
 
   if (!apiRes.ok) {
     return { ok: false, message: `API retornou status ${apiRes.status}` };
   }
 
-  const apiData = await apiRes.json();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let apiData: any;
+  try {
+    apiData = await apiRes.json();
+  } catch {
+    return { ok: false, message: "API retornou uma resposta inválida." };
+  }
   const fields = provider === "supremo" ? parseSupremo(apiData) : parseOwnData(apiData);
 
   if (!fields) {
