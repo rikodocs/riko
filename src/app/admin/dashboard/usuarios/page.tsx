@@ -13,6 +13,7 @@ interface ViewerUserRow {
   active: boolean;
   role: Role;
   email: string | null;
+  moderador_id: string | null;
   in_hands: number;
   downloaded: number;
 }
@@ -33,6 +34,7 @@ export default function UsuariosPage() {
   const [newRole, setNewRole] = useState<Role>("operador");
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [newModeradorId, setNewModeradorId] = useState("");
   const [creating, setCreating] = useState(false);
   const [counts, setCounts] = useState({ pending: 0, stock: 0 });
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -43,7 +45,7 @@ export default function UsuariosPage() {
   const loadUsers = useCallback(async () => {
     const { data: viewerUsers } = await supabase
       .from("viewer_users")
-      .select("id, code, name, active, role, email")
+      .select("id, code, name, active, role, email, moderador_id")
       .order("role", { ascending: true })
       .order("created_at", { ascending: false });
 
@@ -66,7 +68,7 @@ export default function UsuariosPage() {
         inHands = c1 || 0;
         downloaded = c2 || 0;
       }
-      rows.push({ ...u, role, in_hands: inHands, downloaded });
+      rows.push({ ...u, role, moderador_id: u.moderador_id ?? null, in_hands: inHands, downloaded });
     }
     setUsers(rows);
     setLoading(false);
@@ -125,7 +127,7 @@ export default function UsuariosPage() {
     for (let attempt = 0; attempt < 5 && !created; attempt++) {
       const { error } = await supabase
         .from("viewer_users")
-        .insert({ name: newName.trim(), code, role: "operador" });
+        .insert({ name: newName.trim(), code, role: "operador", moderador_id: newModeradorId || null });
       if (!error) {
         created = true;
       } else {
@@ -139,6 +141,19 @@ export default function UsuariosPage() {
         ? { type: "success", text: `Operador criado com código ${code}` }
         : { type: "error", text: "Não foi possível gerar um código único, tente de novo." }
     );
+    loadUsers();
+  }
+
+  async function handleSetModerador(user: ViewerUserRow, moderadorId: string) {
+    const { error } = await supabase
+      .from("viewer_users")
+      .update({ moderador_id: moderadorId || null })
+      .eq("id", user.id);
+    if (error) {
+      setMessage({ type: "error", text: `Erro ao ligar ao moderador: ${error.message}` });
+      return;
+    }
+    setMessage({ type: "success", text: `${user.name} agora responde a ${users.find((m) => m.id === moderadorId)?.name ?? "ninguém"}.` });
     loadUsers();
   }
 
@@ -207,6 +222,20 @@ export default function UsuariosPage() {
             Criar
           </button>
         </div>
+        {newRole === "operador" && (
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-text-secondary">Moderador responsável</label>
+            <select value={newModeradorId} onChange={(e) => setNewModeradorId(e.target.value)} className="input-base w-full">
+              <option value="">— sem moderador (não consegue subir contas) —</option>
+              {users.filter((u) => u.role === "moderador" && u.active).map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-text-disabled">Tudo que esse operador subir vai pra esse moderador.</p>
+          </div>
+        )}
         {newRole === "moderador" && (
           <div className="flex flex-col sm:flex-row gap-3">
             <input
@@ -249,6 +278,7 @@ export default function UsuariosPage() {
                 <th className="p-4">Nome</th>
                 <th className="p-4">Papel</th>
                 <th className="p-4">Acesso</th>
+                <th className="p-4">Moderador</th>
                 <th className="p-4">Em mãos</th>
                 <th className="p-4">Baixados</th>
                 <th className="p-4">Status</th>
@@ -266,6 +296,24 @@ export default function UsuariosPage() {
                       </span>
                     </td>
                     <td className="p-4 font-mono text-text-secondary text-xs">{u.role === "moderador" ? u.email || "—" : u.code}</td>
+                    <td className="p-4">
+                      {u.role === "operador" ? (
+                        <select
+                          value={u.moderador_id ?? ""}
+                          onChange={(e) => handleSetModerador(u, e.target.value)}
+                          className="input-base !py-1 !px-2 text-xs"
+                        >
+                          <option value="">— nenhum —</option>
+                          {users.filter((m) => m.role === "moderador").map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-text-disabled">—</span>
+                      )}
+                    </td>
                     <td className="p-4 text-text-secondary font-mono">{u.role === "operador" ? u.in_hands : "—"}</td>
                     <td className="p-4 text-text-tertiary font-mono">{u.role === "operador" ? u.downloaded : "—"}</td>
                     <td className="p-4">
@@ -286,7 +334,7 @@ export default function UsuariosPage() {
                   </tr>
                   {historyTarget === u.id && (
                     <tr className="border-b border-surface-border last:border-0">
-                      <td colSpan={7} className="p-4 bg-surface-0">
+                      <td colSpan={8} className="p-4 bg-surface-0">
                         {historyLoading ? (
                           <p className="text-text-tertiary text-xs">Carregando histórico...</p>
                         ) : historyRows.length === 0 ? (

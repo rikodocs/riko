@@ -6,6 +6,7 @@ import JSZip from "jszip";
 import { supabase } from "@/lib/supabase";
 import SitesPanel from "@/components/SitesPanel";
 import FerramentasPanel from "@/components/ia/FerramentasPanel";
+import ContasPanel from "@/components/equipe/ContasPanel";
 import { getViewerSession, clearViewerSession, homeForRole, type ViewerSession } from "@/lib/viewer-session";
 
 interface PersonData {
@@ -34,7 +35,7 @@ interface OpDoc {
   person: PersonData | null;
 }
 
-type Tab = "novos" | "baixados" | "sites" | "ferramentas";
+type Tab = "novos" | "baixados" | "sites" | "ferramentas" | "contas";
 
 function formatCpf(cpf: string) {
   const d = (cpf || "").replace(/\D/g, "");
@@ -337,6 +338,15 @@ export default function OperacaoPage() {
           >
             Ferramentas
           </button>
+          <button
+            type="button"
+            onClick={() => setTab("contas")}
+            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
+              tab === "contas" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
+            }`}
+          >
+            Contas
+          </button>
         </div>
 
         {tab === "novos" && novos.length > 0 && (
@@ -370,7 +380,9 @@ export default function OperacaoPage() {
           </div>
         )}
 
-        {tab === "ferramentas" ? (
+        {tab === "contas" ? (
+          <ContasPanel viewerId={session.id} />
+        ) : tab === "ferramentas" ? (
           <FerramentasPanel viewerId={session.id} />
         ) : tab === "sites" ? (
           <SitesPanel viewerId={session.id} canEdit={false} />

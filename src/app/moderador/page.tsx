@@ -7,6 +7,7 @@ import { getViewerSession, clearViewerSession, homeForRole, type ViewerSession }
 import DocumentCard from "@/components/DocumentCard";
 import SitesPanel from "@/components/SitesPanel";
 import FerramentasPanel from "@/components/ia/FerramentasPanel";
+import EquipePanel from "@/components/equipe/EquipePanel";
 
 interface QueueDoc {
   id: string;
@@ -22,7 +23,7 @@ interface OperatorRow {
   downloaded: number;
 }
 
-type Tab = "revisar" | "distribuir" | "sites" | "ferramentas";
+type Tab = "revisar" | "distribuir" | "sites" | "ferramentas" | "equipe";
 
 export default function ModeradorPage() {
   const router = useRouter();
@@ -229,6 +230,15 @@ export default function ModeradorPage() {
           >
             Ferramentas
           </button>
+          <button
+            type="button"
+            onClick={() => setTab("equipe")}
+            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
+              tab === "equipe" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
+            }`}
+          >
+            Equipe
+          </button>
         </div>
       </div>
 
@@ -245,7 +255,9 @@ export default function ModeradorPage() {
           </div>
         )}
 
-        {tab === "ferramentas" ? (
+        {tab === "equipe" ? (
+          <EquipePanel viewerId={session.id} />
+        ) : tab === "ferramentas" ? (
           <FerramentasPanel viewerId={session.id} />
         ) : tab === "sites" ? (
           <SitesPanel viewerId={session.id} canEdit />
