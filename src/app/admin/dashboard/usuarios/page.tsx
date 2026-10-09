@@ -285,16 +285,14 @@ export default function UsuariosPage() {
             placeholder="Nome"
             className="input-base flex-1"
           />
-          <div className="inline-flex rounded-md border border-surface-border bg-surface-1 p-1 gap-1">
+          <div className="segmented">
             {(["operador", "moderador"] as Role[]).map((r) => (
               <button
                 key={r}
                 type="button"
                 onClick={() => setNewRole(r)}
                 aria-pressed={newRole === r}
-                className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                  newRole === r ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
-                }`}
+                data-active={newRole === r}
               >
                 {r === "operador" ? "Operador" : "Moderador"}
               </button>

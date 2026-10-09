@@ -261,7 +261,7 @@ export default function SitesPanel({ viewerId, canEdit }: SitesPanelProps) {
                 className="input-base w-full pl-10"
               />
             </div>
-            <div className="inline-flex rounded-md border border-surface-border bg-surface-1 p-1 gap-1">
+            <div className="segmented">
               {([
                 ["all", `Todos ${sites.length}`],
                 ["available", `Na fila ${available}`],
@@ -271,9 +271,7 @@ export default function SitesPanel({ viewerId, canEdit }: SitesPanelProps) {
                   key={v}
                   type="button"
                   onClick={() => setStatus(v)}
-                  className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                    status === v ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
-                  }`}
+                  data-active={status === v}
                 >
                   {label}
                 </button>

@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import JSZip from "jszip";
+import AppShell, { type ShellTab } from "@/components/AppShell";
+import { FiInbox, FiDownload, FiGlobe, FiTool, FiUpload, FiBookmark } from "react-icons/fi";
 import { supabase } from "@/lib/supabase";
 import SitesPanel from "@/components/SitesPanel";
 import FerramentasPanel from "@/components/ia/FerramentasPanel";
@@ -281,103 +283,32 @@ export default function OperacaoPage() {
 
   if (!session) return null;
 
-  return (
-    <div className="min-h-screen bg-background flex flex-col items-center relative overflow-hidden noise">
-      <div className="absolute inset-0 grid-bg" />
+  const tabs: ShellTab<Tab>[] = [
+    { value: "novos", label: "Novos", icon: <FiInbox />, badge: novos.length },
+    { value: "baixados", label: "Baixados", icon: <FiDownload /> },
+    { value: "contas", label: "Contas", icon: <FiUpload /> },
+    { value: "modelos", label: "Modelos", icon: <FiBookmark /> },
+    { value: "sites", label: "Sites", icon: <FiGlobe /> },
+    { value: "ferramentas", label: "Ferramentas", icon: <FiTool /> },
+  ];
 
-      <header className="relative z-10 w-full max-w-3xl flex items-center justify-between px-6 py-6 gap-4">
-        <div className="flex items-center gap-3">
-          <span className="text-lg font-bold tracking-tight" style={{ fontFamily: "var(--font-heading)" }}>
-            <span className="text-primary">R</span>
-            <span className="text-text-primary">IKO</span>
-          </span>
-          <span className="badge badge-primary text-[9px] uppercase tracking-widest">Operação</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-text-tertiary text-xs hidden sm:inline">{session.name}</span>
-          <button onClick={handleLogout} className="btn-ghost text-xs">
-            Sair
-          </button>
-        </div>
-      </header>
-
-      <div className="relative z-10 w-full max-w-3xl px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="inline-flex rounded-md border border-surface-border bg-surface-0 p-1 gap-1 self-start">
-          <button
-            type="button"
-            onClick={() => setTab("novos")}
-            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
-              tab === "novos" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
-            }`}
-          >
-            Novos <span className="ml-1 font-mono text-[10px] opacity-70">{novos.length}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("baixados")}
-            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
-              tab === "baixados" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
-            }`}
-          >
-            Baixados <span className="ml-1 font-mono text-[10px] opacity-70">{baixados.length}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("sites")}
-            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
-              tab === "sites" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
-            }`}
-          >
-            Sites
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("ferramentas")}
-            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
-              tab === "ferramentas" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
-            }`}
-          >
-            Ferramentas
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("contas")}
-            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
-              tab === "contas" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
-            }`}
-          >
-            Contas
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("modelos")}
-            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
-              tab === "modelos" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
-            }`}
-          >
-            Modelos
-          </button>
-        </div>
-
-        {tab === "novos" && novos.length > 0 && (
-          <button
-            onClick={handleDownloadAll}
-            disabled={busy !== null}
-            className="btn-primary !py-2 !px-4 !text-xs"
-          >
-            {busy === "zip" ? (
-              <>
-                <div className="w-3.5 h-3.5 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
-                Gerando ZIP...
-              </>
-            ) : (
-              `Baixar tudo (${novos.length}) em ZIP`
-            )}
-          </button>
+  const acoes =
+    tab === "novos" && novos.length > 0 ? (
+      <button onClick={handleDownloadAll} disabled={busy !== null} className="btn-primary !py-2 !px-4 !text-[13px]">
+        {busy === "zip" ? (
+          <>
+            <div className="w-3.5 h-3.5 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
+            Gerando ZIP...
+          </>
+        ) : (
+          `Baixar tudo (${novos.length}) em ZIP`
         )}
-      </div>
+      </button>
+    ) : undefined;
 
-      <main className="relative z-10 flex-1 w-full max-w-3xl px-6 py-6 pb-10 flex flex-col gap-4">
+  return (
+    <AppShell role="Operação" userName={session.name} tabs={tabs} tab={tab} onTab={setTab} onLogout={handleLogout} actions={acoes}>
+      <div className="w-full flex flex-col gap-4">
         {msg && (
           <div
             className={`rounded-md border px-4 py-2 text-xs font-medium animate-fade-in ${
@@ -511,7 +442,7 @@ export default function OperacaoPage() {
             );
           })
         )}
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

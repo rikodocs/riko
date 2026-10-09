@@ -93,7 +93,7 @@ export default function RecusadosPage() {
             className="input-base w-full pl-10"
           />
         </div>
-        <div className="inline-flex rounded-md border border-surface-border bg-surface-1 p-1 gap-1">
+        <div className="segmented">
           {([
             ["all", "Todos"],
             ["duplicate", "Duplicados"],
@@ -103,9 +103,7 @@ export default function RecusadosPage() {
               key={v}
               type="button"
               onClick={() => setReason(v)}
-              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                reason === v ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
-              }`}
+              data-active={reason === v}
             >
               {label}
             </button>

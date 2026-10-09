@@ -154,7 +154,7 @@ export function ContasRecebidas({ viewerId }: { viewerId: string }) {
 
       {/* Lista completa com filtros */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-md border border-surface-border bg-surface-1 p-1 gap-1">
+        <div className="segmented">
           {(
             [
               ["novas", "Novas"],
@@ -162,7 +162,7 @@ export function ContasRecebidas({ viewerId }: { viewerId: string }) {
               ["todas", "Todas"],
             ] as [Filtro, string][]
           ).map(([v, l]) => (
-            <button key={v} type="button" onClick={() => setFiltro(v)} className={`px-3 py-1.5 rounded text-xs font-medium ${filtro === v ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"}`}>
+            <button key={v} type="button" onClick={() => setFiltro(v)} data-active={filtro === v}>
               {l}
             </button>
           ))}

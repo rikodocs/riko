@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getViewerSession, clearViewerSession, homeForRole, type ViewerSession } from "@/lib/viewer-session";
 import DocumentCard from "@/components/DocumentCard";
+import AppShell, { type ShellTab } from "@/components/AppShell";
+import { FiCheckSquare, FiSend, FiGlobe, FiTool, FiUsers } from "react-icons/fi";
 import SitesPanel from "@/components/SitesPanel";
 import FerramentasPanel from "@/components/ia/FerramentasPanel";
 import EquipePanel from "@/components/equipe/EquipePanel";
@@ -165,81 +167,17 @@ export default function ModeradorPage() {
 
   if (!session) return null;
 
+  const tabs: ShellTab<Tab>[] = [
+    { value: "revisar", label: "Revisar", icon: <FiCheckSquare />, badge: pending },
+    { value: "distribuir", label: "Distribuir", icon: <FiSend /> },
+    { value: "sites", label: "Sites", icon: <FiGlobe /> },
+    { value: "ferramentas", label: "Ferramentas", icon: <FiTool /> },
+    { value: "equipe", label: "Equipe", icon: <FiUsers /> },
+  ];
+
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center relative overflow-hidden noise">
-      <div className="absolute inset-0 grid-bg" />
-
-      <header className="relative z-10 w-full max-w-3xl flex items-center justify-between px-6 py-6 gap-4">
-        <div className="flex items-center gap-3">
-          <span className="text-lg font-bold tracking-tight" style={{ fontFamily: "var(--font-heading)" }}>
-            <span className="text-primary">R</span>
-            <span className="text-text-primary">IKO</span>
-          </span>
-          <span className="badge badge-primary text-[9px] uppercase tracking-widest">Moderador</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-text-tertiary text-xs hidden sm:inline">{session.name}</span>
-          <button onClick={handleLogout} className="btn-ghost text-xs">
-            Sair
-          </button>
-        </div>
-      </header>
-
-      {/* Tabs */}
-      <div className="relative z-10 w-full max-w-3xl px-6">
-        <div className="inline-flex rounded-md border border-surface-border bg-surface-0 p-1 gap-1">
-          <button
-            type="button"
-            onClick={() => setTab("revisar")}
-            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
-              tab === "revisar" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
-            }`}
-          >
-            Revisar
-            {pending > 0 && (
-              <span className="ml-2 font-mono text-[10px] text-text-secondary">{pending}</span>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("distribuir")}
-            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
-              tab === "distribuir" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
-            }`}
-          >
-            Distribuir
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("sites")}
-            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
-              tab === "sites" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
-            }`}
-          >
-            Sites
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("ferramentas")}
-            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
-              tab === "ferramentas" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
-            }`}
-          >
-            Ferramentas
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("equipe")}
-            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
-              tab === "equipe" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
-            }`}
-          >
-            Equipe
-          </button>
-        </div>
-      </div>
-
-      <main className="relative z-10 flex-1 flex flex-col items-center w-full px-6 py-6 pb-10">
+    <AppShell role="Moderador" userName={session.name} tabs={tabs} tab={tab} onTab={setTab} onLogout={handleLogout}>
+      <div className="w-full flex flex-col items-center gap-4">
         {toast && (
           <div
             className={`mb-4 rounded-md border px-4 py-2 text-xs font-medium animate-fade-in ${
@@ -379,7 +317,7 @@ export default function ModeradorPage() {
             </div>
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }
