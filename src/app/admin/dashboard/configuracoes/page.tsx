@@ -12,6 +12,9 @@ export default function ConfiguracoesPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [showToken, setShowToken] = useState(false);
+  const [anthropicKey, setAnthropicKey] = useState("");
+  const [anthropicModelo, setAnthropicModelo] = useState("");
+  const [showAnthropic, setShowAnthropic] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -27,6 +30,8 @@ export default function ConfiguracoesPage() {
       setProvider(data.api_provider === "supremo" ? "supremo" : "owndata");
       setApiUrl(data.api_url || "");
       setApiToken(data.api_token || "");
+      setAnthropicKey(data.anthropic_api_key || "");
+      setAnthropicModelo(data.anthropic_modelo || "");
     }
   }
 
@@ -41,6 +46,8 @@ export default function ConfiguracoesPage() {
           api_provider: provider,
           api_url: apiUrl.trim(),
           api_token: apiToken.trim(),
+          anthropic_api_key: anthropicKey.trim(),
+          anthropic_modelo: anthropicModelo.trim(),
           updated_at: new Date().toISOString(),
         },
         { onConflict: "id" }
@@ -172,6 +179,49 @@ export default function ConfiguracoesPage() {
             </div>
           </div>
         )}
+
+        {/* IA (Anthropic) — usada pelas Ferramentas de OPC do moderador/operação */}
+        <div className="space-y-4 pt-4 border-t border-surface-border">
+          <div>
+            <h2 className="text-[15px] font-semibold text-text-primary" style={{ fontFamily: "var(--font-heading)" }}>
+              IA (Anthropic)
+            </h2>
+            <p className="text-text-tertiary text-xs mt-0.5">
+              Chave usada pelo gerador de site e pelas respostas de OPC em Ferramentas (moderador e operação)
+            </p>
+          </div>
+          <div className="space-y-2">
+            <label className="block text-xs font-medium text-text-secondary">Chave da API (Anthropic)</label>
+            <div className="relative">
+              <input
+                type={showAnthropic ? "text" : "password"}
+                value={anthropicKey}
+                onChange={(e) => setAnthropicKey(e.target.value)}
+                placeholder="sk-ant-..."
+                className="input-base w-full pr-12"
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                onClick={() => setShowAnthropic(!showAnthropic)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-disabled hover:text-text-secondary transition-colors text-[11px]"
+                aria-label={showAnthropic ? "Ocultar chave" : "Mostrar chave"}
+              >
+                {showAnthropic ? "ocultar" : "mostrar"}
+              </button>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="block text-xs font-medium text-text-secondary">Modelo (opcional)</label>
+            <input
+              type="text"
+              value={anthropicModelo}
+              onChange={(e) => setAnthropicModelo(e.target.value)}
+              placeholder="claude-sonnet-4-6 (padrão)"
+              className="input-base w-full"
+            />
+          </div>
+        </div>
 
         {/* Save */}
         <div className="flex items-center gap-4 pt-2">

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import JSZip from "jszip";
 import { supabase } from "@/lib/supabase";
 import SitesPanel from "@/components/SitesPanel";
+import FerramentasPanel from "@/components/ia/FerramentasPanel";
 import { getViewerSession, clearViewerSession, homeForRole, type ViewerSession } from "@/lib/viewer-session";
 
 interface PersonData {
@@ -33,7 +34,7 @@ interface OpDoc {
   person: PersonData | null;
 }
 
-type Tab = "novos" | "baixados" | "sites";
+type Tab = "novos" | "baixados" | "sites" | "ferramentas";
 
 function formatCpf(cpf: string) {
   const d = (cpf || "").replace(/\D/g, "");
@@ -327,6 +328,15 @@ export default function OperacaoPage() {
           >
             Sites
           </button>
+          <button
+            type="button"
+            onClick={() => setTab("ferramentas")}
+            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
+              tab === "ferramentas" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
+            }`}
+          >
+            Ferramentas
+          </button>
         </div>
 
         {tab === "novos" && novos.length > 0 && (
@@ -360,7 +370,9 @@ export default function OperacaoPage() {
           </div>
         )}
 
-        {tab === "sites" ? (
+        {tab === "ferramentas" ? (
+          <FerramentasPanel viewerId={session.id} />
+        ) : tab === "sites" ? (
           <SitesPanel viewerId={session.id} canEdit={false} />
         ) : loading ? (
           <p className="text-text-tertiary text-sm text-center mt-10">Carregando...</p>

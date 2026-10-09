@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { getViewerSession, clearViewerSession, homeForRole, type ViewerSession } from "@/lib/viewer-session";
 import DocumentCard from "@/components/DocumentCard";
 import SitesPanel from "@/components/SitesPanel";
+import FerramentasPanel from "@/components/ia/FerramentasPanel";
 
 interface QueueDoc {
   id: string;
@@ -21,7 +22,7 @@ interface OperatorRow {
   downloaded: number;
 }
 
-type Tab = "revisar" | "distribuir" | "sites";
+type Tab = "revisar" | "distribuir" | "sites" | "ferramentas";
 
 export default function ModeradorPage() {
   const router = useRouter();
@@ -219,6 +220,15 @@ export default function ModeradorPage() {
           >
             Sites
           </button>
+          <button
+            type="button"
+            onClick={() => setTab("ferramentas")}
+            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
+              tab === "ferramentas" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
+            }`}
+          >
+            Ferramentas
+          </button>
         </div>
       </div>
 
@@ -235,7 +245,9 @@ export default function ModeradorPage() {
           </div>
         )}
 
-        {tab === "sites" ? (
+        {tab === "ferramentas" ? (
+          <FerramentasPanel viewerId={session.id} />
+        ) : tab === "sites" ? (
           <SitesPanel viewerId={session.id} canEdit />
         ) : tab === "revisar" ? (
           <>
