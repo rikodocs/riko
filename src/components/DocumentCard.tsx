@@ -358,7 +358,7 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
   }
 
   return (
-    <div className="glass-static rounded-lg p-6 flex flex-col gap-6 max-w-xl w-full animate-fade-in-scale">
+    <div className="glass-static p-4 sm:p-6 flex flex-col gap-5 max-w-2xl w-full animate-fade-in-scale">
       <div
         className={`relative rounded-md overflow-hidden bg-surface-1 border border-surface-border select-none ${
           loadError ? "" : "cursor-zoom-in"
@@ -486,14 +486,14 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
             <button
               onClick={handleBackToEdit}
               disabled={submitting !== null}
-              className="flex-1 py-3 rounded-md border border-surface-border text-text-secondary font-semibold disabled:opacity-40"
+              className="btn-ghost flex-1 !py-3.5 !text-[15px]"
             >
               Voltar e corrigir
             </button>
             <button
               onClick={handleConfirmSave}
               disabled={submitting !== null || previewResults.every((r) => r.duplicate)}
-              className="flex-1 py-3 rounded-md bg-primary text-on-primary font-semibold disabled:opacity-40"
+              className="btn-primary flex-1 !py-3.5 !text-[15px]"
             >
               {submitting === "save" ? "Salvando..." : "Aprovar e salvar"}
             </button>
@@ -562,14 +562,14 @@ export default function DocumentCard({ doc, viewerId, onDone }: DocumentCardProp
             <button
               onClick={handleReject}
               disabled={submitting !== null}
-              className="flex-1 py-3 rounded-md bg-danger text-white font-semibold disabled:opacity-40"
+              className="flex-1 py-3.5 rounded-[14px] bg-danger text-white font-semibold text-[15px] active:scale-[0.97] transition-transform disabled:opacity-40"
             >
               Recusar
             </button>
             <button
               onClick={handlePreview}
               disabled={!canAccept || submitting !== null}
-              className="flex-1 py-3 rounded-md bg-primary text-on-primary font-semibold disabled:opacity-40"
+              className="btn-primary flex-1 !py-3.5 !text-[15px]"
             >
               {submitting === "preview" ? "Consultando..." : "Consultar"}
             </button>

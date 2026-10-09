@@ -1,5 +1,5 @@
-import type { Metadata } from "next";
-import { Inter, Space_Grotesk, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Inter, Manrope, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
@@ -8,9 +8,11 @@ const inter = Inter({
   display: "swap",
 });
 
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
+// Títulos: geométrica e marcante, pra dar cara de app
+const manrope = Manrope({
+  variable: "--font-manrope",
   subsets: ["latin"],
+  weight: ["600", "700", "800"],
   display: "swap",
 });
 
@@ -25,19 +27,21 @@ export const metadata: Metadata = {
   description: "RIKO - Sistema de Verificação",
 };
 
+export const viewport: Viewport = {
+  themeColor: "#09090c",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="pt-BR"
-      className={`${inter.variable} ${spaceGrotesk.variable} ${geistMono.variable} h-full`}
-    >
-      <body className="min-h-full flex flex-col bg-background text-foreground antialiased">
-        {children}
-      </body>
+    <html lang="pt-BR" className={`${inter.variable} ${manrope.variable} ${geistMono.variable} h-full`}>
+      <body className="min-h-full flex flex-col bg-background text-foreground antialiased">{children}</body>
     </html>
   );
 }

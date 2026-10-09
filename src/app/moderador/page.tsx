@@ -6,7 +6,8 @@ import { supabase } from "@/lib/supabase";
 import { getViewerSession, clearViewerSession, homeForRole, type ViewerSession } from "@/lib/viewer-session";
 import DocumentCard from "@/components/DocumentCard";
 import AppShell, { type ShellTab } from "@/components/AppShell";
-import { FiCheckSquare, FiSend, FiGlobe, FiTool, FiUsers } from "react-icons/fi";
+import { FiCheckSquare, FiSend, FiGlobe, FiTool, FiUsers, FiInbox } from "react-icons/fi";
+import EmptyState from "@/components/EmptyState";
 import SitesPanel from "@/components/SitesPanel";
 import FerramentasPanel from "@/components/ia/FerramentasPanel";
 import EquipePanel from "@/components/equipe/EquipePanel";
@@ -168,11 +169,11 @@ export default function ModeradorPage() {
   if (!session) return null;
 
   const tabs: ShellTab<Tab>[] = [
-    { value: "revisar", label: "Revisar", icon: <FiCheckSquare />, badge: pending },
-    { value: "distribuir", label: "Distribuir", icon: <FiSend /> },
-    { value: "sites", label: "Sites", icon: <FiGlobe /> },
-    { value: "ferramentas", label: "Ferramentas", icon: <FiTool /> },
-    { value: "equipe", label: "Equipe", icon: <FiUsers /> },
+    { value: "revisar", label: "Revisar", icon: <FiCheckSquare />, badge: pending, subtitle: "Digite o CPF, consulte e aprove ou recuse" },
+    { value: "distribuir", label: "Distribuir", icon: <FiSend />, subtitle: "Envie os aprovados pros operadores" },
+    { value: "sites", label: "Sites", icon: <FiGlobe />, subtitle: "Fila de CNPJ + URL pra operação" },
+    { value: "ferramentas", label: "Ferramentas", icon: <FiTool />, subtitle: "Gerador de site e respostas OPC" },
+    { value: "equipe", label: "Equipe", icon: <FiUsers />, subtitle: "Operadores, contas recebidas e financeiro" },
   ];
 
   return (
@@ -216,13 +217,12 @@ export default function ModeradorPage() {
                 </button>
               </div>
             ) : !doc ? (
-              <div className="glass-static rounded-lg p-8 text-center max-w-sm mt-10">
-                <p className="text-text-primary font-medium mb-1">Fila vazia</p>
-                <p className="text-text-tertiary text-sm mb-4">Nenhum documento aguardando moderação.</p>
-                <button onClick={() => loadNext(session.id)} className="btn-ghost text-xs">
-                  Atualizar
-                </button>
-              </div>
+              <EmptyState
+                icon={<FiInbox />}
+                title="Fila vazia"
+                text="Nenhum documento aguardando moderação. Quando o admin subir novos, eles aparecem aqui."
+                action={<button onClick={() => loadNext(session.id)} className="btn-ghost">Atualizar</button>}
+              />
             ) : (
               <DocumentCard doc={doc} viewerId={session.id} viewerName={session.name} onDone={handleDone} />
             )}

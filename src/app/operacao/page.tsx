@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import JSZip from "jszip";
 import AppShell, { type ShellTab } from "@/components/AppShell";
-import { FiInbox, FiDownload, FiGlobe, FiTool, FiUpload, FiBookmark } from "react-icons/fi";
+import { FiInbox, FiDownload, FiGlobe, FiTool, FiUpload, FiBookmark, FiFileText, FiChevronRight, FiUser } from "react-icons/fi";
+import EmptyState from "@/components/EmptyState";
 import { supabase } from "@/lib/supabase";
 import SitesPanel from "@/components/SitesPanel";
 import FerramentasPanel from "@/components/ia/FerramentasPanel";
@@ -284,12 +285,12 @@ export default function OperacaoPage() {
   if (!session) return null;
 
   const tabs: ShellTab<Tab>[] = [
-    { value: "novos", label: "Novos", icon: <FiInbox />, badge: novos.length },
-    { value: "baixados", label: "Baixados", icon: <FiDownload /> },
-    { value: "contas", label: "Contas", icon: <FiUpload /> },
-    { value: "modelos", label: "Modelos", icon: <FiBookmark /> },
-    { value: "sites", label: "Sites", icon: <FiGlobe /> },
-    { value: "ferramentas", label: "Ferramentas", icon: <FiTool /> },
+    { value: "novos", label: "Novos", icon: <FiInbox />, badge: novos.length, subtitle: "Documentos que o moderador enviou pra você" },
+    { value: "baixados", label: "Baixados", icon: <FiDownload />, subtitle: "O que você já baixou" },
+    { value: "contas", label: "Contas", icon: <FiUpload />, subtitle: "Suba a planilha e acompanhe seus envios" },
+    { value: "modelos", label: "Modelos", icon: <FiBookmark />, subtitle: "Palavras-chave, títulos e descrições prontos" },
+    { value: "sites", label: "Sites", icon: <FiGlobe />, subtitle: "Pegue o próximo CNPJ + URL da fila" },
+    { value: "ferramentas", label: "Ferramentas", icon: <FiTool />, subtitle: "Gerador de site e respostas OPC" },
   ];
 
   const acoes =
@@ -341,104 +342,78 @@ export default function OperacaoPage() {
             </button>
           </div>
         ) : list.length === 0 ? (
-          <div className="glass-static rounded-lg p-8 text-center mt-6">
-            <p className="text-text-primary font-medium mb-1">
-              {tab === "novos" ? "Nenhum documento novo" : "Nada baixado ainda"}
-            </p>
-            <p className="text-text-tertiary text-sm">
-              {tab === "novos"
-                ? "Aguarde o moderador enviar documentos pra você."
-                : "Os documentos que você baixar aparecem aqui."}
-            </p>
-          </div>
+          <EmptyState
+            icon={tab === "novos" ? <FiInbox /> : <FiDownload />}
+            title={tab === "novos" ? "Nenhum documento novo" : "Nada baixado ainda"}
+            text={tab === "novos" ? "Quando o moderador enviar documentos pra você, eles aparecem aqui." : "Os documentos que você baixar ficam guardados aqui."}
+          />
         ) : (
           list.map((doc) => {
             const fields = doc.person ? personFields(doc.person) : [];
             const isOpen = openDoc === doc.id;
             const isImage = (doc.file_type || "").startsWith("image/");
+            const nome = doc.person?.name || "Pessoa sem nome";
+            const iniciais = nome.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("");
             return (
-              <div key={doc.id} className="glass-static rounded-lg p-5 flex flex-col gap-4 animate-fade-in">
-                {/* Dados da pessoa em cima, com copiar em cada campo */}
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h3 className="text-[15px] font-semibold text-text-primary" style={{ fontFamily: "var(--font-heading)" }}>
-                      {doc.person?.name || "Pessoa sem nome"}
-                    </h3>
-                    <p className="text-text-tertiary text-[11px] font-mono mt-0.5">
+              <article key={doc.id} className="glass-static overflow-hidden animate-fade-in">
+                {/* Cabeçalho: avatar, nome, CPF */}
+                <div className="flex items-center gap-3 p-4 sm:p-5">
+                  <span className="w-11 h-11 rounded-2xl shrink-0 flex items-center justify-center text-[13px] font-extrabold text-white" style={{ background: "linear-gradient(135deg, #2a93ff, #5e5ce6)" }}>
+                    {iniciais || <FiUser />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-[17px] font-bold text-text-primary truncate">{nome}</h3>
+                    <p className="text-[12px] text-text-tertiary font-mono mt-0.5 truncate">
                       {doc.person ? formatCpf(doc.person.cpf) : "Sem dados vinculados"}
-                      {doc.status === "downloaded" && doc.downloaded_at && (
-                        <> · baixado em {new Date(doc.downloaded_at).toLocaleString("pt-BR")}</>
-                      )}
+                      {doc.status === "downloaded" && doc.downloaded_at && <> · baixado {new Date(doc.downloaded_at).toLocaleDateString("pt-BR")}</>}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {doc.person && (
-                      <button onClick={() => handleTxt(doc)} className="btn-ghost text-xs px-3 py-1.5">
-                        Baixar .txt
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleDownloadOne(doc)}
-                      disabled={busy !== null}
-                      className="btn-primary !py-1.5 !px-3 !text-xs"
-                    >
-                      {busy === doc.id ? "Baixando..." : "Baixar doc"}
-                    </button>
-                  </div>
+                  <span className={`badge ${doc.status === "downloaded" ? "badge-success" : "badge-primary"}`}>{doc.status === "downloaded" ? "Baixado" : "Novo"}</span>
                 </div>
 
+                {/* Campos copiáveis em grade */}
                 {fields.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-px bg-surface-border border-y border-surface-border">
                     {fields.map((f) => (
-                      <div
-                        key={f.label}
-                        className="flex items-center gap-2 rounded-md border border-surface-border bg-surface-1 px-3 py-2"
-                      >
+                      <div key={f.label} className="flex items-center gap-2 bg-surface-0 px-4 py-3 min-w-0">
                         <div className="min-w-0 flex-1">
-                          <div className="text-[10px] uppercase tracking-wider text-text-disabled">{f.label}</div>
-                          <div className="text-xs text-text-primary break-words select-all">{f.value}</div>
+                          <div className="eyebrow !text-[10px]">{f.label}</div>
+                          <div className="text-[14px] text-text-primary break-words select-all mt-0.5">{f.value}</div>
                         </div>
                         <CopyButton value={f.value} label={f.label} />
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-text-tertiary text-xs">
-                    Este documento foi aprovado só com o CPF — os dados completos ainda não estão disponíveis.
-                  </p>
+                  <p className="px-4 sm:px-5 pb-2 text-[13px] text-text-tertiary">Aprovado só com o CPF — os dados completos ainda não estão disponíveis.</p>
                 )}
 
-                {/* Documento */}
-                <div className="border-t border-surface-border pt-3">
-                  <button
-                    type="button"
-                    onClick={() => setOpenDoc(isOpen ? null : doc.id)}
-                    className="text-xs text-text-tertiary hover:text-text-primary transition-colors flex items-center gap-2"
-                  >
-                    <svg
-                      className={`w-3.5 h-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      strokeWidth={2}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                    </svg>
-                    {isOpen ? "Ocultar documento" : "Ver documento"}
-                    <span className="font-mono text-[10px] text-text-disabled">{doc.file_name}</span>
+                {/* Ações */}
+                <div className="flex items-center gap-2 p-3 sm:p-4">
+                  <button type="button" onClick={() => setOpenDoc(isOpen ? null : doc.id)} className="btn-ghost flex-1 !justify-between !px-4">
+                    <span className="flex items-center gap-2 text-[14px]"><FiFileText className="text-text-tertiary" /> {isOpen ? "Ocultar documento" : "Ver documento"}</span>
+                    <FiChevronRight className={`text-text-tertiary transition-transform ${isOpen ? "rotate-90" : ""}`} />
                   </button>
-                  {isOpen && (
-                    <div className="mt-3 rounded-md overflow-hidden border border-surface-border bg-surface-1">
-                      {isImage ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={docUrl(doc)} alt="Documento" className="w-full h-auto block" />
-                      ) : (
-                        <iframe src={docUrl(doc)} title="Documento" className="w-full h-[70vh] block" />
-                      )}
-                    </div>
+                  {doc.person && (
+                    <button onClick={() => handleTxt(doc)} className="btn-ghost !px-3" title="Baixar .txt com os dados" aria-label="Baixar .txt">
+                      .txt
+                    </button>
                   )}
+                  <button onClick={() => handleDownloadOne(doc)} disabled={busy !== null} className="btn-primary !px-4">
+                    <FiDownload /> {busy === doc.id ? "Baixando..." : "Baixar"}
+                  </button>
                 </div>
-              </div>
+                {isOpen && (
+                  <div className="border-t border-surface-border bg-black">
+                    {isImage ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={docUrl(doc)} alt="Documento" className="w-full h-auto block" />
+                    ) : (
+                      <iframe src={docUrl(doc)} title="Documento" className="w-full h-[70vh] block" />
+                    )}
+                  </div>
+                )}
+              </article>
             );
           })
         )}
