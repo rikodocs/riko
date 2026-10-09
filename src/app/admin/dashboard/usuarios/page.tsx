@@ -3,6 +3,20 @@
 import { Fragment, useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { gerarCodigo6Digitos } from "@/lib/codigo-acesso";
+import JSZip from "jszip";
+
+// Evita dois arquivos com o mesmo nome dentro do ZIP (um sobrescreveria o outro)
+function uniqueName(name: string, used: Set<string>) {
+  let candidate = name;
+  const dot = name.lastIndexOf(".");
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : "";
+  for (let i = 2; used.has(candidate.toLowerCase()); i++) candidate = `${base}_${i}${ext}`;
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+type OrigemZip = "pending_review" | "available";
 
 type Role = "moderador" | "operador";
 
@@ -35,6 +49,10 @@ export default function UsuariosPage() {
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newModeradorId, setNewModeradorId] = useState("");
+  const [zipAmount, setZipAmount] = useState("");
+  const [zipOrigem, setZipOrigem] = useState<OrigemZip>("pending_review");
+  const [downloading, setDownloading] = useState(false);
+  const [zipMsg, setZipMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [creating, setCreating] = useState(false);
   const [counts, setCounts] = useState({ pending: 0, stock: 0 });
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -140,6 +158,76 @@ export default function UsuariosPage() {
         : { type: "error", text: "Não foi possível gerar um código único, tente de novo." }
     );
     loadUsers();
+  }
+
+  // Baixa um ZIP com N documentos (da fila de moderação ou dos aprovados livres),
+  // mais antigos primeiro, e tira eles do estoque marcando como "downloaded".
+  async function handleDownloadZip() {
+    const amount = parseInt(zipAmount, 10);
+    const disponivel = zipOrigem === "pending_review" ? counts.pending : counts.stock;
+    if (!amount || amount < 1) return;
+    if (amount > disponivel) {
+      setZipMsg({ type: "error", text: `Só existem ${disponivel} documento(s) nessa origem.` });
+      return;
+    }
+    setDownloading(true);
+    setZipMsg(null);
+    try {
+      const { data: docs, error } = await supabase
+        .from("documents")
+        .select("id, file_name, file_url")
+        .eq("status", zipOrigem)
+        .is("assigned_to", null)
+        .order("created_at", { ascending: true })
+        .limit(amount);
+      if (error) throw new Error(error.message);
+      if (!docs || docs.length === 0) throw new Error("Nenhum documento disponível.");
+
+      const zip = new JSZip();
+      const usedNames = new Set<string>();
+      const zippedIds: string[] = [];
+      for (const doc of docs) {
+        if (!doc.file_url) continue;
+        try {
+          const res = await fetch(doc.file_url);
+          if (!res.ok) continue;
+          zip.file(uniqueName(doc.file_name || "documento", usedNames), await res.blob());
+          zippedIds.push(doc.id);
+        } catch {
+          // Arquivo que falhar fica no estoque
+        }
+      }
+      if (zippedIds.length === 0) throw new Error("Não foi possível baixar nenhum arquivo.");
+
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const now = new Date();
+      const stamp = `${String(now.getDate()).padStart(2, "0")}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getFullYear()).slice(-2)}`;
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${zippedIds.length}docs${stamp}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      const { error: updateError } = await supabase
+        .from("documents")
+        .update({ status: "downloaded", downloaded_at: now.toISOString(), review_claimed_by: null, review_claimed_at: null })
+        .in("id", zippedIds)
+        .eq("status", zipOrigem)
+        .is("assigned_to", null);
+      if (updateError) throw new Error(`ZIP baixado, mas não marcou como baixado: ${updateError.message}`);
+
+      const skipped = docs.length - zippedIds.length;
+      setZipMsg({ type: "success", text: `${zippedIds.length} documento(s) baixado(s)${skipped ? ` (${skipped} falharam e continuam no estoque)` : ""}.` });
+      setZipAmount("");
+    } catch (err) {
+      setZipMsg({ type: "error", text: err instanceof Error ? err.message : "Erro ao gerar ZIP" });
+    } finally {
+      setDownloading(false);
+      loadCounts();
+    }
   }
 
   async function handleSetModerador(user: ViewerUserRow, moderadorId: string) {
@@ -264,7 +352,51 @@ export default function UsuariosPage() {
         )}
       </div>
 
-      <div className="glass-static rounded-lg overflow-hidden">
+      <div className="glass-static rounded-lg p-6 space-y-4">
+        <div>
+          <h2 className="text-[15px] font-semibold text-text-primary" style={{ fontFamily: "var(--font-heading)" }}>
+            Baixar ZIP
+          </h2>
+          <p className="text-text-tertiary text-xs mt-0.5">
+            Baixa documentos do estoque e marca eles como baixados (saem da contagem). Mais antigos primeiro.
+          </p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <select value={zipOrigem} onChange={(e) => setZipOrigem(e.target.value as OrigemZip)} className="input-base">
+            <option value="pending_review">Aguardando moderação ({counts.pending})</option>
+            <option value="available">Aprovados no estoque ({counts.stock})</option>
+          </select>
+          <input
+            type="number"
+            min={1}
+            max={zipOrigem === "pending_review" ? counts.pending : counts.stock}
+            value={zipAmount}
+            onChange={(e) => setZipAmount(e.target.value)}
+            placeholder="qtd"
+            disabled={downloading}
+            className="input-base w-28 mono-input text-center"
+          />
+          <button
+            onClick={handleDownloadZip}
+            disabled={downloading || !zipAmount || parseInt(zipAmount, 10) < 1}
+            className="btn-primary"
+          >
+            {downloading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
+                Baixando...
+              </>
+            ) : (
+              "Baixar ZIP"
+            )}
+          </button>
+        </div>
+        {zipMsg && (
+          <p className={`text-xs font-medium ${zipMsg.type === "success" ? "text-success" : "text-danger"}`}>{zipMsg.text}</p>
+        )}
+      </div>
+
+      <div className="glass-static rounded-lg overflow-x-auto">
         {loading ? (
           <p className="text-text-tertiary text-sm p-6">Carregando...</p>
         ) : users.length === 0 ? (
