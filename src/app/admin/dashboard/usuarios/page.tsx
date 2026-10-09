@@ -49,27 +49,25 @@ export default function UsuariosPage() {
       .order("role", { ascending: true })
       .order("created_at", { ascending: false });
 
-    const rows: ViewerUserRow[] = [];
-    for (const u of viewerUsers || []) {
-      const role: Role = u.role === "moderador" ? "moderador" : "operador";
-      let inHands = 0;
-      let downloaded = 0;
-      if (role === "operador") {
-        const { count: c1 } = await supabase
-          .from("documents")
-          .select("id", { count: "exact", head: true })
-          .eq("assigned_to", u.id)
-          .eq("status", "available");
-        const { count: c2 } = await supabase
-          .from("documents")
-          .select("id", { count: "exact", head: true })
-          .eq("assigned_to", u.id)
-          .eq("status", "downloaded");
-        inHands = c1 || 0;
-        downloaded = c2 || 0;
-      }
-      rows.push({ ...u, role, moderador_id: u.moderador_id ?? null, in_hands: inHands, downloaded });
+    // Uma consulta só pra todos os contadores (antes eram 2 por usuário, em fila)
+    const { data: docs } = await supabase
+      .from("documents")
+      .select("assigned_to, status")
+      .not("assigned_to", "is", null)
+      .in("status", ["available", "downloaded"]);
+    const contagem = new Map<string, { in_hands: number; downloaded: number }>();
+    for (const d of docs || []) {
+      const c = contagem.get(d.assigned_to) ?? { in_hands: 0, downloaded: 0 };
+      if (d.status === "available") c.in_hands += 1;
+      else c.downloaded += 1;
+      contagem.set(d.assigned_to, c);
     }
+
+    const rows: ViewerUserRow[] = (viewerUsers || []).map((u) => {
+      const role: Role = u.role === "moderador" ? "moderador" : "operador";
+      const c = role === "operador" ? contagem.get(u.id) : undefined;
+      return { ...u, role, moderador_id: u.moderador_id ?? null, in_hands: c?.in_hands ?? 0, downloaded: c?.downloaded ?? 0 };
+    });
     setUsers(rows);
     setLoading(false);
   }, []);

@@ -31,7 +31,8 @@ export interface Person {
   score: string;
   income: string;
   used?: boolean;
-  raw_data: Record<string, unknown>;
+  // Pesado (JSON inteiro da API) — não vem na listagem; o card busca ao abrir "Dados completos".
+  raw_data?: Record<string, unknown> | null;
   created_at: string;
   documents?: PersonDocument[];
 }
@@ -429,17 +430,8 @@ export default function PersonCard({ person, actionLabel, actionColor, onAction,
             </div>
           </div>
 
-          {/* Raw data */}
-          {person.raw_data && (
-            <details className="mt-4">
-              <summary className="text-[11px] text-text-disabled cursor-pointer hover:text-text-tertiary transition-colors">
-                Dados completos da API
-              </summary>
-              <pre className="mt-2 bg-surface-0 rounded-xl border border-surface-border p-3 text-[10px] text-text-tertiary overflow-auto max-h-64 font-mono">
-                {JSON.stringify(person.raw_data, null, 2)}
-              </pre>
-            </details>
-          )}
+          {/* Raw data — carregado só quando abre (não vem na listagem, é pesado) */}
+          <RawDataLazy personId={person.id} inicial={person.raw_data ?? null} />
         </div>
       )}
 
@@ -490,5 +482,31 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
       <span className="text-text-disabled text-[10px] uppercase tracking-wider font-medium">{label}</span>
       <p className="text-text-secondary text-[13px]">{value || "—"}</p>
     </div>
+  );
+}
+
+// "Dados completos da API": o raw_data é o campo mais pesado da tabela, então a
+// listagem não traz ele — busca só quando o admin abre o <details>.
+function RawDataLazy({ personId, inicial }: { personId: string; inicial: Record<string, unknown> | null }) {
+  const [data, setData] = useState<Record<string, unknown> | null>(inicial);
+  const [loading, setLoading] = useState(false);
+
+  async function handleToggle(e: React.SyntheticEvent<HTMLDetailsElement>) {
+    if (!e.currentTarget.open || data !== null || loading) return;
+    setLoading(true);
+    const { data: row } = await supabase.from("people").select("raw_data").eq("id", personId).single();
+    setData((row?.raw_data as Record<string, unknown> | null) ?? {});
+    setLoading(false);
+  }
+
+  return (
+    <details className="mt-4" onToggle={handleToggle}>
+      <summary className="text-[11px] text-text-disabled cursor-pointer hover:text-text-tertiary transition-colors">
+        Dados completos da API
+      </summary>
+      <pre className="mt-2 bg-surface-0 rounded-xl border border-surface-border p-3 text-[10px] text-text-tertiary overflow-auto max-h-64 font-mono">
+        {loading ? "Carregando..." : data && Object.keys(data).length ? JSON.stringify(data, null, 2) : "Sem dados salvos da API."}
+      </pre>
+    </details>
   );
 }

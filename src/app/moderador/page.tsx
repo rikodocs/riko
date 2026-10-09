@@ -77,27 +77,24 @@ export default function ModeradorPage() {
       .eq("active", true)
       .order("name", { ascending: true });
 
-    const rows: OperatorRow[] = [];
-    for (const op of ops || []) {
-      const { count: inHands } = await supabase
+    // Contadores de todos os operadores + estoque em 2 consultas paralelas
+    // (antes eram 2 por operador, em fila)
+    const [{ data: docs }, { count: stockCount }] = await Promise.all([
+      supabase
         .from("documents")
-        .select("id", { count: "exact", head: true })
-        .eq("assigned_to", op.id)
-        .eq("status", "available");
-      const { count: downloaded } = await supabase
-        .from("documents")
-        .select("id", { count: "exact", head: true })
-        .eq("assigned_to", op.id)
-        .eq("status", "downloaded");
-      rows.push({ ...op, in_hands: inHands || 0, downloaded: downloaded || 0 });
+        .select("assigned_to, status")
+        .not("assigned_to", "is", null)
+        .in("status", ["available", "downloaded"]),
+      supabase.from("documents").select("id", { count: "exact", head: true }).eq("status", "available").is("assigned_to", null),
+    ]);
+    const contagem = new Map<string, { in_hands: number; downloaded: number }>();
+    for (const d of docs || []) {
+      const c = contagem.get(d.assigned_to) ?? { in_hands: 0, downloaded: 0 };
+      if (d.status === "available") c.in_hands += 1;
+      else c.downloaded += 1;
+      contagem.set(d.assigned_to, c);
     }
-    setOperators(rows);
-
-    const { count: stockCount } = await supabase
-      .from("documents")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "available")
-      .is("assigned_to", null);
+    setOperators((ops || []).map((op) => ({ ...op, in_hands: contagem.get(op.id)?.in_hands ?? 0, downloaded: contagem.get(op.id)?.downloaded ?? 0 })));
     setStock(stockCount || 0);
     setLoadingOps(false);
   }, []);

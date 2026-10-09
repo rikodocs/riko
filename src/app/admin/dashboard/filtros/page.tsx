@@ -68,7 +68,9 @@ export default function FiltrosPage() {
     setLoading(true);
     const { data } = await supabase
       .from("people")
-      .select("*, documents(id, file_name, file_url, file_path, file_type)")
+      // Sem raw_data (JSON inteiro da API, o campo mais pesado) — o card busca
+      // sob demanda. Os filtros de score/renda/telefone rodam no navegador.
+      .select("id, cpf, name, birth_date, mother_name, profession, phones, emails, addresses, city, state, phone, email, address, score, income, used, created_at, documents(id, file_name, file_url, file_path, file_type)")
       .order("created_at", { ascending: false });
     if (data) {
       setAllPeople(data);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import PersonCard, { Person } from "@/components/PersonCard";
 import JSZip from "jszip";
@@ -15,18 +15,37 @@ export default function DocsPage() {
   const [exporting, setExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
-  useEffect(() => { loadDocs(); }, []);
-
-  async function loadDocs() {
+  // Busca e paginação no banco: só a página atual, só as colunas da tela
+  // (sem raw_data, que é o campo mais pesado). Busca com atraso de 250ms.
+  const loadDocs = useCallback(async (page: number, termo: string) => {
     setLoading(true);
-    const { data } = await supabase
+    const from = (page - 1) * PER_PAGE;
+    let q = supabase
       .from("people")
-      .select("*, documents(id, file_name, file_url, file_path, file_type)")
+      .select(`id, cpf, name, birth_date, mother_name, profession, phones, emails, addresses, city, state, phone, email, address, score, income, used, created_at, documents(id, file_name, file_url, file_path, file_type)`, { count: "exact" })
       .eq("used", true)
-      .order("created_at", { ascending: false });
-    if (data) setPeople(data);
+      .order("created_at", { ascending: false })
+      .range(from, from + PER_PAGE - 1);
+    const t = termo.trim().replace(/[,()]/g, "");
+    if (t) {
+      const digits = t.replace(/\D/g, "");
+      q = q.or(digits ? `name.ilike.%${t}%,cpf.ilike.%${digits}%` : `name.ilike.%${t}%`);
+    }
+    const { data, count } = await q;
+    setPeople((data as Person[]) || []);
+    setTotal(count || 0);
     setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => loadDocs(currentPage, search), 250);
+    return () => clearTimeout(t);
+  }, [loadDocs, currentPage, search]);
+
+  function recarregar() {
+    loadDocs(currentPage, search);
   }
 
   function cleanFileName(name: string, index: number, ext: string, total: number) {
@@ -40,8 +59,8 @@ export default function DocsPage() {
   async function handleBatchExport() {
     const qty = parseInt(batchQty);
     if (!qty || qty <= 0) return;
-    if (qty > people.length) {
-      setExportMsg(`Só existem ${people.length} docs disponíveis.`);
+    if (qty > total) {
+      setExportMsg(`Só existem ${total} docs disponíveis.`);
       setTimeout(() => setExportMsg(null), 3000);
       return;
     }
@@ -50,7 +69,14 @@ export default function DocsPage() {
     setExportMsg(null);
 
     try {
-      const batch = people.slice(0, qty);
+      // Busca só o lote pedido (a tela tem apenas a página atual)
+      const { data: lote } = await supabase
+        .from("people")
+        .select("id, name, documents(id, file_name, file_url, file_path, file_type)")
+        .eq("used", true)
+        .order("created_at", { ascending: false })
+        .limit(qty);
+      const batch = (lote as Person[]) || [];
       const zip = new JSZip();
       let downloadCount = 0;
 
@@ -103,25 +129,17 @@ export default function DocsPage() {
     }
   }
 
-  const filtered = people.filter(
-    (p) => p.name?.toLowerCase().includes(search.toLowerCase()) || p.cpf?.includes(search)
-  );
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+  const paginatedPeople = people;
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  const paginatedPeople = useMemo(() => {
-    const start = (currentPage - 1) * PER_PAGE;
-    return filtered.slice(start, start + PER_PAGE);
-  }, [filtered, currentPage]);
-
-  // Reset page when search changes
+  // Volta pra página 1 quando muda a busca; corrige se ficou fora do intervalo
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentPage(1);
   }, [search]);
-
-  // Adjust page if it's out of bounds
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(Math.max(1, totalPages));
-  }, [filtered.length, totalPages, currentPage]);
+  }, [totalPages, currentPage]);
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -133,11 +151,11 @@ export default function DocsPage() {
           </svg>
           <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome ou CPF..." className="input-base w-full pl-10" />
         </div>
-        <span className="text-[11px] text-text-disabled font-mono">{filtered.length} docs</span>
+        <span className="text-[11px] text-text-disabled font-mono">{total} docs</span>
       </div>
 
       {/* Batch export */}
-      {people.length > 0 && (
+      {total > 0 && (
         <div className="glass-static rounded-lg px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="flex items-center gap-2">
             <svg className="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -149,10 +167,10 @@ export default function DocsPage() {
             <input
               type="number"
               min="1"
-              max={people.length}
+              max={total}
               value={batchQty}
               onChange={(e) => setBatchQty(e.target.value)}
-              placeholder={`1-${people.length}`}
+              placeholder={`1-${total}`}
               disabled={exporting}
               className="w-24 bg-surface-1 border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder-text-disabled focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all font-mono disabled:opacity-50 text-center"
             />
@@ -185,11 +203,11 @@ export default function DocsPage() {
       )}
 
       {/* Pagination top */}
-      {filtered.length > PER_PAGE && (
+      {total > PER_PAGE && (
         <PaginationBar
           currentPage={currentPage}
           totalPages={totalPages}
-          total={filtered.length}
+          total={total}
           perPage={PER_PAGE}
           onPageChange={setCurrentPage}
         />
@@ -199,14 +217,14 @@ export default function DocsPage() {
         <div className="space-y-3">
           {[1,2,3].map(i => <div key={i} className="glass-static rounded-lg p-5 animate-shimmer h-20" />)}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : people.length === 0 ? (
         <div className="glass-static rounded-lg p-12 text-center">
           <div className="w-12 h-12 rounded-lg bg-glass mx-auto mb-3 flex items-center justify-center">
             <svg className="w-5 h-5 text-text-disabled" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
-          <p className="text-text-tertiary text-sm">Nenhum documento usado ainda.</p>
+          <p className="text-text-tertiary text-sm">{search.trim() ? "Nada encontrado." : "Nenhum documento usado ainda."}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -214,7 +232,7 @@ export default function DocsPage() {
             <PersonCard
               key={person.id}
               person={person}
-              onDocumentsChanged={loadDocs}
+              onDocumentsChanged={recarregar}
               index={i}
             />
           ))}
@@ -222,11 +240,11 @@ export default function DocsPage() {
       )}
 
       {/* Pagination bottom */}
-      {filtered.length > PER_PAGE && (
+      {total > PER_PAGE && (
         <PaginationBar
           currentPage={currentPage}
           totalPages={totalPages}
-          total={filtered.length}
+          total={total}
           perPage={PER_PAGE}
           onPageChange={setCurrentPage}
         />
