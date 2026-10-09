@@ -6,12 +6,14 @@ import { Produtos } from "./Produtos";
 import { FinanceiroEquipe } from "./FinanceiroEquipe";
 import { UploadContas } from "./UploadContas";
 import { Operadores } from "./Operadores";
+import { Modelos } from "./Modelos";
 
-type Sub = "contas" | "operadores" | "financeiro" | "produtos" | "subir";
+type Sub = "contas" | "operadores" | "modelos" | "financeiro" | "produtos" | "subir";
 
 const ABAS: [Sub, string][] = [
   ["contas", "Contas recebidas"],
   ["operadores", "Operadores"],
+  ["modelos", "Modelos"],
   ["financeiro", "Financeiro"],
   ["produtos", "Produtos"],
   ["subir", "Subir contas"],
@@ -33,6 +35,7 @@ export default function EquipePanel({ viewerId }: { viewerId: string }) {
       <div className="glass-static rounded-lg p-5">
         {sub === "contas" && <ContasRecebidas viewerId={viewerId} />}
         {sub === "operadores" && <Operadores viewerId={viewerId} />}
+        {sub === "modelos" && <Modelos viewerId={viewerId} />}
         {sub === "financeiro" && <FinanceiroEquipe viewerId={viewerId} />}
         {sub === "produtos" && <Produtos viewerId={viewerId} />}
         {sub === "subir" && <UploadContas viewerId={viewerId} />}

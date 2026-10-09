@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import SitesPanel from "@/components/SitesPanel";
 import FerramentasPanel from "@/components/ia/FerramentasPanel";
 import ContasPanel from "@/components/equipe/ContasPanel";
+import { ModelosOperador } from "@/components/equipe/ModelosOperador";
 import { getViewerSession, clearViewerSession, homeForRole, type ViewerSession } from "@/lib/viewer-session";
 
 interface PersonData {
@@ -35,7 +36,7 @@ interface OpDoc {
   person: PersonData | null;
 }
 
-type Tab = "novos" | "baixados" | "sites" | "ferramentas" | "contas";
+type Tab = "novos" | "baixados" | "sites" | "ferramentas" | "contas" | "modelos";
 
 function formatCpf(cpf: string) {
   const d = (cpf || "").replace(/\D/g, "");
@@ -347,6 +348,15 @@ export default function OperacaoPage() {
           >
             Contas
           </button>
+          <button
+            type="button"
+            onClick={() => setTab("modelos")}
+            className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
+              tab === "modelos" ? "bg-primary-muted text-primary" : "text-text-tertiary hover:text-text-primary"
+            }`}
+          >
+            Modelos
+          </button>
         </div>
 
         {tab === "novos" && novos.length > 0 && (
@@ -380,7 +390,11 @@ export default function OperacaoPage() {
           </div>
         )}
 
-        {tab === "contas" ? (
+        {tab === "modelos" ? (
+          <div className="w-full max-w-3xl animate-fade-in">
+            <ModelosOperador viewerId={session.id} />
+          </div>
+        ) : tab === "contas" ? (
           <ContasPanel viewerId={session.id} />
         ) : tab === "ferramentas" ? (
           <FerramentasPanel viewerId={session.id} />
