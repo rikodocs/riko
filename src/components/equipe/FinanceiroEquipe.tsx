@@ -115,7 +115,7 @@ export function FinanceiroEquipe({ viewerId }: { viewerId: string }) {
       </div>
 
       {ops.length === 0 && (
-        <p className="text-xs text-text-tertiary">Nenhum operador na sua equipe. O admin liga operadores a você em Usuários.</p>
+        <p className="text-xs text-text-tertiary">Nenhum operador na sua equipe. Crie os seus na aba Operadores.</p>
       )}
 
       {ops.map((op) => {
