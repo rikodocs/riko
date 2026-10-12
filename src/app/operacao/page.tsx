@@ -145,6 +145,9 @@ export default function OperacaoPage() {
   const [busy, setBusy] = useState<string | null>(null); // "zip" | doc.id
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [openDoc, setOpenDoc] = useState<string | null>(null);
+  // Estoque único: o operador puxa os aprovados direto, sem esperar distribuição
+  const [disponivel, setDisponivel] = useState<boolean | null>(null);
+  const [pegando, setPegando] = useState(false);
 
   const loadDocs = useCallback(async (viewerId: string) => {
     setLoading(true);
@@ -186,6 +189,49 @@ export default function OperacaoPage() {
     const t = setTimeout(() => setMsg(null), 4000);
     return () => clearTimeout(t);
   }, [msg]);
+
+  const carregarEstoque = useCallback(async (viewerId: string) => {
+    try {
+      const r = await fetch("/api/operacao/pegar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ viewerId, action: "consultar" }),
+      });
+      const b = await r.json();
+      if (r.ok) setDisponivel(!!b.disponivel);
+    } catch {
+      // sem estoque visível; o resto da tela continua funcionando
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (session) carregarEstoque(session.id);
+  }, [session, carregarEstoque]);
+
+  async function handlePegar() {
+    if (!session) return;
+    setPegando(true);
+    setMsg(null);
+    try {
+      const r = await fetch("/api/operacao/pegar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ viewerId: session.id, action: "pegar" }),
+      });
+      const b = await r.json();
+      if (!r.ok) throw new Error(b.error || "Não foi possível pegar.");
+      setDisponivel(!!b.disponivel);
+      setMsg({ type: "success", text: "Documento pego. Ele já está na sua lista." });
+      setTab("novos");
+      await loadDocs(session.id);
+    } catch (err) {
+      setMsg({ type: "error", text: err instanceof Error ? err.message : "Não foi possível pegar." });
+      carregarEstoque(session.id);
+    } finally {
+      setPegando(false);
+    }
+  }
 
   function handleLogout() {
     clearViewerSession();
@@ -319,6 +365,20 @@ export default function OperacaoPage() {
             }`}
           >
             {msg.text}
+          </div>
+        )}
+
+        {tab === "novos" && (
+          <div className="glass-static p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="flex-1 min-w-0">
+              <p className="text-[16px] font-bold text-text-primary">Pegar documento</p>
+              <p className="text-[13px] text-text-tertiary">
+                {disponivel === false ? "Nenhum documento disponível agora. Tente de novo mais tarde." : "Pegue um de cada vez. O documento vai pra sua lista abaixo."}
+              </p>
+            </div>
+            <button onClick={handlePegar} disabled={pegando || disponivel === false} className="btn-primary">
+              {pegando ? "Pegando..." : "Pegar próximo"}
+            </button>
           </div>
         )}
 
