@@ -219,7 +219,20 @@ function slotsFactuais(info: CnpjInfo, dominio?: string, emailContato?: string):
   const telefoneIntl = telDigitos ? `+55${telDigitos}` : "";
   const whatsapp = telDigitos ? `55${telDigitos}` : "";
 
-  const email = emailContato?.trim() || (dominio ? `contato@${dominio}` : info.email ?? "contato@empresa.com.br");
+  // Sem domínio e sem e-mail em nenhuma base de CNPJ: monta um parecido com o
+  // nome da empresa — o "contato@empresa.com.br" de exemplo denunciava o site.
+  // Só no e-mail tira o sufixo societário (LTDA, ME, EIRELI...) — o nome
+  // exibido no site continua a razão social inteira (ver nomeCurto).
+  const slugEmpresa = (info.razao_social ? nomeCurto(info.razao_social) : "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\b(ltda|me|epp|eireli|s\/?a|sa|mei|limitada|sociedade unipessoal|slu)\b\.?/g, " ")
+    .replace(/[^a-z0-9]+/g, "")
+    .slice(0, 30);
+  const email =
+    emailContato?.trim() ||
+    (dominio ? `contato@${dominio}` : info.email?.trim() || `contato@${slugEmpresa || "atendimento"}.com.br`);
 
   // Tempo de atuação DERIVADO da data de abertura (Receita) — fato, não invenção.
   // ATUACAO_LEAD é o trecho que entra no meio da frase do "Quem Somos"; fica ""
