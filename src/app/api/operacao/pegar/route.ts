@@ -17,13 +17,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Acesso restrito a operadores." }, { status: 403 });
     }
 
-    async function temDisponivel() {
-      const { data } = await supabase
+    // Busca o tipo de CNPJ atribuído a este operador (pode ser null = pega qualquer)
+    const { data: viewer } = await supabase
+      .from("viewer_users")
+      .select("cnpj_type_id")
+      .eq("id", viewerId)
+      .single();
+    const tipoCnpj = viewer?.cnpj_type_id || null;
+
+    function queryDisponivel() {
+      let q = supabase
         .from("documents")
         .select("id")
         .eq("status", "available")
-        .is("assigned_to", null)
-        .limit(1);
+        .is("assigned_to", null);
+      if (tipoCnpj) q = q.eq("cnpj_type_id", tipoCnpj);
+      return q;
+    }
+
+    async function temDisponivel() {
+      const { data } = await queryDisponivel().limit(1);
       return (data?.length ?? 0) > 0;
     }
 
@@ -33,11 +46,7 @@ export async function POST(request: Request) {
 
     if (action === "pegar") {
       for (let tentativa = 0; tentativa < 5; tentativa++) {
-        const { data: livre } = await supabase
-          .from("documents")
-          .select("id")
-          .eq("status", "available")
-          .is("assigned_to", null)
+        const { data: livre } = await queryDisponivel()
           .order("created_at", { ascending: true })
           .limit(1);
         if (!livre || livre.length === 0) {

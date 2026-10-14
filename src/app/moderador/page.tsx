@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { getViewerSession, clearViewerSession, homeForRole, type ViewerSession } from "@/lib/viewer-session";
 import DocumentCard from "@/components/DocumentCard";
 import AppShell, { type ShellTab } from "@/components/AppShell";
-import { FiCheckSquare, FiSend, FiGlobe, FiTool, FiUsers, FiInbox } from "react-icons/fi";
+import { FiCheckSquare, FiSend, FiGlobe, FiTool, FiUsers, FiInbox, FiPlus, FiTrash2, FiTag } from "react-icons/fi";
 import EmptyState from "@/components/EmptyState";
 import SitesPanel from "@/components/SitesPanel";
 import FerramentasPanel from "@/components/ia/FerramentasPanel";
@@ -49,6 +49,16 @@ export default function ModeradorPage() {
   const [assignAmount, setAssignAmount] = useState("");
   const [assigning, setAssigning] = useState(false);
   const [assignMsg, setAssignMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Tipos de CNPJ
+  interface CnpjType { id: string; name: string; }
+  interface CnpjOperator { id: string; name: string; cnpj_type_id: string | null; }
+  const [cnpjTypes, setCnpjTypes] = useState<CnpjType[]>([]);
+  const [cnpjOperators, setCnpjOperators] = useState<CnpjOperator[]>([]);
+  const [cnpjCounts, setCnpjCounts] = useState<Record<string, number>>({});
+  const [newTypeName, setNewTypeName] = useState("");
+  const [loadingTypes, setLoadingTypes] = useState(false);
+  const [typeMsg, setTypeMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const loadNext = useCallback(async (viewerId: string) => {
     setLoadingDoc(true);
@@ -116,9 +126,30 @@ export default function ModeradorPage() {
     loadNext(s.id);
   }, [router, loadNext]);
 
+  const loadCnpjTypes = useCallback(async (vid: string) => {
+    setLoadingTypes(true);
+    try {
+      const r = await fetch("/api/cnpj-types", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ viewerId: vid, action: "list" }),
+      });
+      const b = await r.json();
+      if (r.ok) {
+        setCnpjTypes(b.types || []);
+        setCnpjOperators(b.operators || []);
+        setCnpjCounts(b.counts || {});
+      }
+    } catch { /* */ }
+    setLoadingTypes(false);
+  }, []);
+
   useEffect(() => {
-    if (tab === "distribuir") loadOperators();
-  }, [tab, loadOperators]);
+    if (tab === "distribuir") {
+      loadOperators();
+      if (session) loadCnpjTypes(session.id);
+    }
+  }, [tab, loadOperators, loadCnpjTypes, session]);
 
   useEffect(() => {
     if (!toast) return;
@@ -163,6 +194,57 @@ export default function ModeradorPage() {
       setAssignMsg({ type: "error", text: err instanceof Error ? err.message : "Erro ao distribuir." });
     } finally {
       setAssigning(false);
+    }
+  }
+
+  async function handleCreateType() {
+    if (!session || !newTypeName.trim()) return;
+    try {
+      const r = await fetch("/api/cnpj-types", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ viewerId: session.id, action: "create", name: newTypeName.trim() }),
+      });
+      const b = await r.json();
+      if (!r.ok) throw new Error(b.error);
+      setNewTypeName("");
+      setTypeMsg({ type: "success", text: `Tipo "${b.type.name}" criado.` });
+      loadCnpjTypes(session.id);
+    } catch (err) {
+      setTypeMsg({ type: "error", text: err instanceof Error ? err.message : "Erro." });
+    }
+  }
+
+  async function handleDeleteType(typeId: string) {
+    if (!session) return;
+    try {
+      const r = await fetch("/api/cnpj-types", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ viewerId: session.id, action: "delete", typeId }),
+      });
+      const b = await r.json();
+      if (!r.ok) throw new Error(b.error);
+      setTypeMsg({ type: "success", text: "Tipo removido." });
+      loadCnpjTypes(session.id);
+    } catch (err) {
+      setTypeMsg({ type: "error", text: err instanceof Error ? err.message : "Erro." });
+    }
+  }
+
+  async function handleAssignType(operatorId: string, typeId: string | null) {
+    if (!session) return;
+    try {
+      const r = await fetch("/api/cnpj-types", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ viewerId: session.id, action: "assign-operator", operatorId, typeId: typeId || undefined }),
+      });
+      const b = await r.json();
+      if (!r.ok) throw new Error(b.error);
+      loadCnpjTypes(session.id);
+    } catch (err) {
+      setTypeMsg({ type: "error", text: err instanceof Error ? err.message : "Erro." });
     }
   }
 
@@ -313,6 +395,114 @@ export default function ModeradorPage() {
                     ))}
                   </tbody>
                 </table>
+              )}
+            </div>
+
+            {/* === Tipos de CNPJ === */}
+            <div className="glass-static rounded-lg p-5 flex flex-col gap-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-[15px] font-semibold text-text-primary flex items-center gap-2" style={{ fontFamily: "var(--font-heading)" }}>
+                    <FiTag className="text-primary" /> Tipos de CNPJ
+                  </h2>
+                  <p className="text-text-tertiary text-xs mt-0.5">Crie categorias e defina qual tipo cada operador usa</p>
+                </div>
+              </div>
+
+              {typeMsg && (
+                <p className={`text-xs font-medium ${typeMsg.type === "success" ? "text-success" : "text-danger"}`}>
+                  {typeMsg.text}
+                </p>
+              )}
+
+              {/* Criar novo tipo */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newTypeName}
+                  onChange={(e) => setNewTypeName(e.target.value)}
+                  placeholder="Nome do tipo (ex: CNPJ de Adv)"
+                  className="input-base flex-1"
+                  onKeyDown={(e) => { if (e.key === "Enter") handleCreateType(); }}
+                />
+                <button onClick={handleCreateType} disabled={!newTypeName.trim()} className="btn-primary !px-4">
+                  <FiPlus /> Criar
+                </button>
+              </div>
+
+              {/* Lista de tipos com estoque */}
+              {loadingTypes && cnpjTypes.length === 0 ? (
+                <p className="text-text-tertiary text-sm">Carregando...</p>
+              ) : cnpjTypes.length === 0 ? (
+                <p className="text-text-tertiary text-sm">Nenhum tipo criado ainda. Os documentos ficam todos num estoque só.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {cnpjTypes.map((t) => (
+                    <div key={t.id} className="flex items-center gap-2 bg-surface-1 border border-surface-border rounded-xl px-3 py-2">
+                      <span className="text-sm font-semibold text-text-primary">{t.name}</span>
+                      <span className="badge badge-primary">{cnpjCounts[t.id] || 0}</span>
+                      <button onClick={() => handleDeleteType(t.id)} className="text-text-tertiary hover:text-danger transition-colors" title="Remover tipo">
+                        <FiTrash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {(cnpjCounts["__none__"] || 0) > 0 && (
+                    <div className="flex items-center gap-2 bg-surface-1 border border-surface-border rounded-xl px-3 py-2">
+                      <span className="text-sm text-text-secondary">Sem tipo</span>
+                      <span className="badge badge-warning">{cnpjCounts["__none__"]}</span>
+                      <select
+                        defaultValue=""
+                        onChange={async (e) => {
+                          if (!e.target.value || !session) return;
+                          try {
+                            const r = await fetch("/api/cnpj-types/atribuir-docs", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ viewerId: session.id, typeId: e.target.value }),
+                            });
+                            const b = await r.json();
+                            if (!r.ok) throw new Error(b.error);
+                            setTypeMsg({ type: "success", text: `${b.updated} doc(s) marcados.` });
+                            loadCnpjTypes(session.id);
+                          } catch (err) {
+                            setTypeMsg({ type: "error", text: err instanceof Error ? err.message : "Erro." });
+                          }
+                          e.target.value = "";
+                        }}
+                        className="input-base !py-1.5 !text-xs w-36"
+                      >
+                        <option value="">Mover para...</option>
+                        {cnpjTypes.map((t) => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Atribuir tipo por operador */}
+              {cnpjTypes.length > 0 && cnpjOperators.length > 0 && (
+                <div className="border-t border-surface-border pt-4">
+                  <p className="eyebrow mb-3">Tipo por operador</p>
+                  <div className="flex flex-col gap-2">
+                    {cnpjOperators.map((op) => (
+                      <div key={op.id} className="flex items-center justify-between gap-3 bg-surface-1 border border-surface-border rounded-xl px-4 py-3">
+                        <span className="text-sm text-text-primary font-medium">{op.name}</span>
+                        <select
+                          value={op.cnpj_type_id || ""}
+                          onChange={(e) => handleAssignType(op.id, e.target.value || null)}
+                          className="input-base !py-2 !text-sm w-48"
+                        >
+                          <option value="">Todos (sem filtro)</option>
+                          {cnpjTypes.map((t) => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           </div>
