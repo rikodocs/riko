@@ -174,16 +174,17 @@ export default function RecusadosPage() {
             </svg>
           </button>
           <div className="max-w-[95vw] max-h-[90vh] w-full sm:w-auto" onClick={(e) => e.stopPropagation()}>
-            {preview.file_url ? (
-              preview.file_type === "application/pdf" ? (
-                <iframe src={preview.file_url} title={preview.file_name} className="w-[90vw] h-[85vh] rounded-md bg-white" />
-              ) : (
+            {(() => {
+              const src = `/api/documento/${preview.id}?viewerId=admin&admin=true`;
+              return preview.file_type === "application/pdf" ? (
+                <iframe src={src} title={preview.file_name} className="w-[90vw] h-[85vh] rounded-md bg-white" />
+              ) : (preview.file_type || "").startsWith("image/") ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={preview.file_url} alt={preview.file_name} className="max-w-[95vw] max-h-[90vh] object-contain rounded-md" />
-              )
-            ) : (
-              <p className="text-text-tertiary text-sm">Arquivo sem URL.</p>
-            )}
+                <img src={src} alt={preview.file_name} className="max-w-[95vw] max-h-[90vh] object-contain rounded-md" />
+              ) : (
+                <p className="text-text-tertiary text-sm">Tipo de arquivo não suportado para preview.</p>
+              );
+            })()}
           </div>
         </div>
       )}

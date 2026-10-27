@@ -24,8 +24,9 @@ export async function GET(
     if (docError || !doc) {
       return NextResponse.json({ error: "Documento não encontrado." }, { status: 404 });
     }
-    // Operador vê o que foi atribuído a ele; moderador vê o que está revisando
-    if (doc.assigned_to !== viewerId && doc.review_claimed_by !== viewerId) {
+    // Admin vê tudo; operador vê o que foi atribuído; moderador vê o que está revisando
+    const isAdmin = request.nextUrl.searchParams.get("admin") === "true";
+    if (!isAdmin && doc.assigned_to !== viewerId && doc.review_claimed_by !== viewerId) {
       return NextResponse.json({ error: "Sem acesso a este documento." }, { status: 403 });
     }
 

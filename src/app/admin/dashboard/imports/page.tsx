@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { PDFDocument } from "pdf-lib";
 import { supabase } from "@/lib/supabase";
 
 interface DocRecord {
@@ -31,19 +32,56 @@ export default function ImportsPage() {
     if (data) setRecentDocs(data);
   }
 
+  async function splitPdfPages(file: File): Promise<File[]> {
+    const bytes = await file.arrayBuffer();
+    const pdf = await PDFDocument.load(bytes);
+    const pageCount = pdf.getPageCount();
+    if (pageCount <= 1) return [file];
+
+    const baseName = file.name.replace(/\.pdf$/i, "");
+    const results: File[] = [];
+    for (let i = 0; i < pageCount; i++) {
+      const single = await PDFDocument.create();
+      const [page] = await single.copyPages(pdf, [i]);
+      single.addPage(page);
+      const singleBytes = await single.save();
+      results.push(
+        new File([singleBytes.buffer as ArrayBuffer], `${baseName}_p${i + 1}.pdf`, { type: "application/pdf" })
+      );
+    }
+    return results;
+  }
+
   const handleFiles = useCallback(async (files: FileList | File[]) => {
-    const validFiles = Array.from(files).filter(
+    const rawFiles = Array.from(files).filter(
       (f) => f.type === "application/pdf" || f.type.startsWith("image/")
     );
 
-    if (validFiles.length === 0) {
+    if (rawFiles.length === 0) {
       setMessage({ type: "error", text: "Envie apenas imagens ou PDFs." });
       return;
     }
 
     setUploading(true);
     setMessage(null);
+    setProgress({ current: 0, total: rawFiles.length, failed: 0 });
+
+    // Split multi-page PDFs into single pages
+    const validFiles: File[] = [];
+    for (const f of rawFiles) {
+      if (f.type === "application/pdf") {
+        try {
+          const pages = await splitPdfPages(f);
+          validFiles.push(...pages);
+        } catch {
+          validFiles.push(f);
+        }
+      } else {
+        validFiles.push(f);
+      }
+    }
     setProgress({ current: 0, total: validFiles.length, failed: 0 });
+
     let successCount = 0;
     let failedCount = 0;
     const skippedDuplicates: string[] = [];
