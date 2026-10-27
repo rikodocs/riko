@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
-import { readQrFromDoc } from "@/lib/qr-reader";
+import { readQrFromDoc, type DocScan } from "@/lib/qr-reader";
 
 type Category = "cnh_digital" | "rg_digital" | "outro" | "pending_scan";
 interface ListDoc { id: string; file_name: string; file_type: string; qr_data: string | null; created_at: string }
@@ -99,16 +100,16 @@ export default function DashboardPage() {
         const doc = nr.doc as { id: string; file_name: string; file_type: string } | null;
         if (!doc) break;
 
-        let qr: string | null = null;
+        let res: DocScan;
         try {
-          qr = await readQrFromDoc(doc.id, doc.file_type);
+          res = await readQrFromDoc(doc.id, doc.file_type);
         } catch {
           failed.push(doc.id);
           scanned++;
           setProgress({ current: scanned, total: totalToScan, lastFile: doc.file_name, lastCategory: "erro" });
           continue;
         }
-        const b = await api({ action: "save", docId: doc.id, qr });
+        const b = await api({ action: "save", docId: doc.id, qr: res.qr, text: res.text });
         b.file_name = doc.file_name;
 
         scanned++;
@@ -303,9 +304,9 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {listCat && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setListCat(null)}>
-          <div className="glass-static rounded-lg w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      {listCat && createPortal(
+        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setListCat(null)}>
+          <div className="bg-surface-1 border border-surface-border rounded-xl shadow-2xl w-full max-w-5xl h-[min(80vh,720px)] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-4 border-b border-surface-border flex items-center justify-between">
               <h3 className="text-[15px] font-bold text-text-primary" style={{ fontFamily: "var(--font-heading)" }}>
                 {CAT_LABEL[listCat]} {listDocs && <span className="text-text-tertiary font-normal">({listDocs.length})</span>}
@@ -313,7 +314,7 @@ export default function DashboardPage() {
               <button onClick={() => setListCat(null)} className="text-text-tertiary hover:text-text-primary text-xl leading-none">×</button>
             </div>
             <div className="flex-1 flex min-h-0">
-              <div className="w-80 shrink-0 border-r border-surface-border overflow-y-auto">
+              <div className="w-72 shrink-0 border-r border-surface-border overflow-y-auto">
                 {listDocs === null ? (
                   <p className="p-5 text-xs text-text-tertiary">Carregando...</p>
                 ) : listDocs.length === 0 ? (
@@ -340,7 +341,8 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Como funciona */}

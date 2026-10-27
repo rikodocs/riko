@@ -24,6 +24,9 @@ const RG_PATTERNS = [
   "carteira de identidade", "registro geral",
 ];
 
+const TEXT_CNH = ["senatran", "carteira nacional de habilita", "assinador serpro"];
+const TEXT_RG = ["carteira de identidade", "identidade nacional", "registro geral", "instituto de identifica"];
+
 type DocCategory = "cnh_digital" | "rg_digital" | "outro";
 
 function classifyQr(text: string): DocCategory {
@@ -124,7 +127,14 @@ export async function POST(request: Request) {
 
     if (action === "save" && docId) {
       const qr = (body.qr as string | null) || null;
-      const category: DocCategory = qr ? classifyQr(qr) : "outro";
+      const text = ((body.text as string | undefined) || "").toLowerCase();
+      let category: DocCategory = qr ? classifyQr(qr) : "outro";
+      // CNH/RG digital QR carries signed data, not a URL — the PDF text layer identifies the issuer.
+      // Scans of physical docs have no text layer, so this only matches real digital PDFs.
+      if (category === "outro") {
+        if (TEXT_CNH.some((p) => text.includes(p))) category = "cnh_digital";
+        else if (TEXT_RG.some((p) => text.includes(p))) category = "rg_digital";
+      }
       const { error } = await supabase
         .from("documents")
         .update({ doc_category: category, qr_data: qr })
