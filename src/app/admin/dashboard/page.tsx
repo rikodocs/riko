@@ -1,7 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { readQrFromDoc } from "@/lib/qr-reader";
+
+type Category = "cnh_digital" | "rg_digital" | "outro" | "pending_scan";
+interface ListDoc { id: string; file_name: string; file_type: string; qr_data: string | null; created_at: string }
+const CAT_LABEL: Record<Category, string> = {
+  cnh_digital: "CNH Digital", rg_digital: "RG Digital", outro: "Outros", pending_scan: "Aguardando scan",
+};
 
 interface Stats {
   pending: number;
@@ -25,7 +32,13 @@ export default function DashboardPage() {
   });
   const [scan, setScan] = useState<ScanStats>({ cnh_digital: 0, rg_digital: 0, outro: 0, pending_scan: 0 });
   const [scanning, setScanning] = useState(false);
-  const [scanMsg, setScanMsg] = useState<string | null>(null);
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
+  const abortRef = useRef(false);
+  const [progress, setProgress] = useState<{ current: number; total: number; lastFile: string; lastCategory: string } | null>(null);
+  const [listCat, setListCat] = useState<Category | null>(null);
+  const [listDocs, setListDocs] = useState<ListDoc[] | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   useEffect(() => {
     loadStats();
@@ -65,34 +78,104 @@ export default function DashboardPage() {
 
   async function handleScanAll() {
     setScanning(true);
-    setScanMsg(null);
-    let totalScanned = 0;
-    let totalCnh = 0;
+    setPaused(false);
+    pausedRef.current = false;
+    abortRef.current = false;
 
+    const totalToScan = scan.pending_scan;
+    let scanned = 0;
+
+    setProgress({ current: 0, total: totalToScan, lastFile: "", lastCategory: "" });
+
+    const failed: string[] = [];
     try {
-      // Scan in batches of 50 until no more pending
-      for (let i = 0; i < 100; i++) {
-        const r = await fetch("/api/scanner/qr-cnh", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "scan-all" }),
+      while (true) {
+        while (pausedRef.current && !abortRef.current) {
+          await new Promise((r) => setTimeout(r, 300));
+        }
+        if (abortRef.current) break;
+
+        const nr = await api({ action: "next", skip: failed });
+        const doc = nr.doc as { id: string; file_name: string; file_type: string } | null;
+        if (!doc) break;
+
+        let qr: string | null = null;
+        try {
+          qr = await readQrFromDoc(doc.id, doc.file_type);
+        } catch {
+          failed.push(doc.id);
+          scanned++;
+          setProgress({ current: scanned, total: totalToScan, lastFile: doc.file_name, lastCategory: "erro" });
+          continue;
+        }
+        const b = await api({ action: "save", docId: doc.id, qr });
+        b.file_name = doc.file_name;
+
+        scanned++;
+        const cat = b.category as string;
+        const catLabel = cat === "cnh_digital" ? "CNH Digital" : cat === "rg_digital" ? "RG Digital" : "Outro";
+
+        setScan((prev) => ({
+          ...prev,
+          [cat]: (prev[cat as keyof ScanStats] || 0) + 1,
+          pending_scan: Math.max(0, prev.pending_scan - 1),
+        }));
+
+        setProgress({
+          current: scanned,
+          total: totalToScan,
+          lastFile: b.file_name || `Doc ${scanned}`,
+          lastCategory: catLabel,
         });
-        const b = await r.json();
-        if (!r.ok) throw new Error(b.error);
-        totalScanned += b.scanned;
-        totalCnh += b.cnh_digital || 0;
-        const totalRg = (b.rg_digital || 0);
-        setScanMsg(`Escaneando... ${totalScanned} docs processados, ${totalCnh} CNH digital, ${totalRg} RG digital`);
-        if (b.scanned === 0) break;
       }
-      setScanMsg(`Pronto! ${totalScanned} docs escaneados`);
     } catch (err) {
-      setScanMsg(`Erro: ${err instanceof Error ? err.message : "falha"}`);
+      setProgress((prev) => prev ? { ...prev, lastFile: `Erro: ${err instanceof Error ? err.message : "falha"}`, lastCategory: "erro" } : null);
     }
+
     setScanning(false);
+    setPaused(false);
     loadScanStats();
     loadStats();
   }
+
+  async function api(payload: Record<string, unknown>) {
+    const r = await fetch("/api/scanner/qr-cnh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const b = await r.json();
+    if (!r.ok) throw new Error(b.error || "falha");
+    return b;
+  }
+
+  async function openList(category: Category) {
+    setListCat(category);
+    setListDocs(null);
+    setPreviewId(null);
+    const b = await api({ action: "list", category });
+    setListDocs(b.docs);
+  }
+
+  async function handleResetOutros() {
+    if (!confirm(`Re-escanear os ${scan.outro} docs marcados como Outros?`)) return;
+    await api({ action: "reset" });
+    setProgress(null);
+    await loadScanStats();
+  }
+
+  function handlePause() {
+    pausedRef.current = !pausedRef.current;
+    setPaused(pausedRef.current);
+  }
+
+  function handleStop() {
+    abortRef.current = true;
+    pausedRef.current = false;
+    setPaused(false);
+  }
+
+  const pct = progress ? Math.round((progress.current / Math.max(progress.total, 1)) * 100) : 0;
 
   const statCards = [
     { label: "Aguardando moderação", value: stats.pending, color: "text-warning" },
@@ -119,7 +202,7 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Scanner de CNH Digital */}
+      {/* Scanner */}
       <div className="glass-static rounded-lg p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -127,56 +210,138 @@ export default function DashboardPage() {
               <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
               </svg>
-              Scanner de CNH Digital
+              Scanner de Documentos
             </h2>
             <p className="text-text-tertiary text-xs mt-1 leading-relaxed max-w-xl">
               Escaneia o QR code dos PDFs pra separar automaticamente: <strong className="text-success">CNH Digital</strong>, <strong className="text-primary">RG Digital</strong> e <strong className="text-text-secondary">Outros</strong>. O moderador não precisa mais separar manualmente.
             </p>
           </div>
-          <button onClick={handleScanAll} disabled={scanning || scan.pending_scan === 0} className="btn-primary shrink-0">
-            {scanning ? (
+          <div className="flex items-center gap-2 shrink-0">
+            {scanning && (
               <>
-                <div className="w-4 h-4 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
-                Escaneando...
+                <button onClick={handlePause} className="px-3 py-2 rounded-lg text-xs font-medium border border-surface-border bg-surface-1 text-text-secondary hover:bg-surface-2 transition-colors">
+                  {paused ? "Continuar" : "Pausar"}
+                </button>
+                <button onClick={handleStop} className="px-3 py-2 rounded-lg text-xs font-medium border border-danger/30 bg-danger-muted text-danger hover:bg-danger/20 transition-colors">
+                  Parar
+                </button>
               </>
-            ) : scan.pending_scan > 0 ? (
-              `Escanear ${scan.pending_scan} docs`
-            ) : (
-              "Tudo escaneado"
             )}
-          </button>
+            {!scanning && (
+              <button onClick={handleScanAll} disabled={scan.pending_scan === 0} className="btn-primary">
+                {scan.pending_scan > 0 ? `Escanear ${scan.pending_scan} docs` : "Tudo escaneado"}
+              </button>
+            )}
+          </div>
         </div>
 
-        {scanMsg && (
-          <p className={`mt-3 text-xs font-medium ${scanMsg.startsWith("Erro") ? "text-danger" : "text-success"}`}>
-            {scanMsg}
+        {/* Progress bar */}
+        {scanning && progress && (
+          <div className="mt-4 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-text-secondary font-medium">
+                {paused ? "Pausado" : "Escaneando"} — {progress.current} de {progress.total}
+              </span>
+              <span className="text-text-disabled font-mono">{pct}%</span>
+            </div>
+            <div className="w-full h-2 bg-surface-0 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${paused ? "bg-warning" : "bg-primary"}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            {progress.lastFile && (
+              <div className="flex items-center gap-2 text-[11px]">
+                <span className={`inline-block w-2 h-2 rounded-full ${
+                  progress.lastCategory === "CNH Digital" ? "bg-success" :
+                  progress.lastCategory === "RG Digital" ? "bg-primary" :
+                  progress.lastCategory === "erro" ? "bg-danger" : "bg-text-disabled"
+                }`} />
+                <span className="text-text-tertiary truncate">{progress.lastFile}</span>
+                <span className="text-text-disabled">→</span>
+                <span className={`font-medium ${
+                  progress.lastCategory === "CNH Digital" ? "text-success" :
+                  progress.lastCategory === "RG Digital" ? "text-primary" :
+                  progress.lastCategory === "erro" ? "text-danger" : "text-text-secondary"
+                }`}>{progress.lastCategory}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Finished message */}
+        {!scanning && progress && progress.current > 0 && (
+          <p className="mt-3 text-xs font-medium text-success">
+            Pronto! {progress.current} docs escaneados.
           </p>
         )}
 
         {/* Category counters */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-5">
-          <div className="bg-surface-1 border border-surface-border rounded-xl p-4">
-            <p className="eyebrow mb-1">CNH Digital</p>
-            <p className="stat-value text-success">{scan.cnh_digital}</p>
-            <p className="text-[11px] text-text-disabled mt-1">QR SENATRAN</p>
-          </div>
-          <div className="bg-surface-1 border border-surface-border rounded-xl p-4">
-            <p className="eyebrow mb-1">RG Digital</p>
-            <p className="stat-value text-primary">{scan.rg_digital}</p>
-            <p className="text-[11px] text-text-disabled mt-1">QR gov.br/cin</p>
-          </div>
-          <div className="bg-surface-1 border border-surface-border rounded-xl p-4">
-            <p className="eyebrow mb-1">Outros</p>
-            <p className="stat-value text-text-secondary">{scan.outro}</p>
-            <p className="text-[11px] text-text-disabled mt-1">CNH física, RG físico, etc</p>
-          </div>
-          <div className="bg-surface-1 border border-surface-border rounded-xl p-4">
-            <p className="eyebrow mb-1">Aguardando scan</p>
-            <p className="stat-value text-warning">{scan.pending_scan}</p>
-            <p className="text-[11px] text-text-disabled mt-1">Não escaneados</p>
+          {([
+            ["cnh_digital", "text-success", "QR SENATRAN"],
+            ["rg_digital", "text-primary", "QR gov.br/cin"],
+            ["outro", "text-text-secondary", "CNH física, RG físico, etc"],
+            ["pending_scan", "text-warning", "Não escaneados"],
+          ] as [Category, string, string][]).map(([cat, color, hint]) => (
+            <button
+              key={cat}
+              onClick={() => openList(cat)}
+              className="text-left bg-surface-1 border border-surface-border rounded-xl p-4 hover:border-primary/50 hover:bg-surface-2 transition-colors"
+            >
+              <p className="eyebrow mb-1">{CAT_LABEL[cat]}</p>
+              <p className={`stat-value ${color}`}>{scan[cat]}</p>
+              <p className="text-[11px] text-text-disabled mt-1">{hint} · ver docs →</p>
+            </button>
+          ))}
+        </div>
+
+        {!scanning && scan.outro > 0 && (
+          <button onClick={handleResetOutros} className="mt-4 text-xs text-text-tertiary hover:text-primary underline underline-offset-2">
+            Re-escanear os {scan.outro} docs em Outros
+          </button>
+        )}
+      </div>
+
+      {listCat && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setListCat(null)}>
+          <div className="glass-static rounded-lg w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-surface-border flex items-center justify-between">
+              <h3 className="text-[15px] font-bold text-text-primary" style={{ fontFamily: "var(--font-heading)" }}>
+                {CAT_LABEL[listCat]} {listDocs && <span className="text-text-tertiary font-normal">({listDocs.length})</span>}
+              </h3>
+              <button onClick={() => setListCat(null)} className="text-text-tertiary hover:text-text-primary text-xl leading-none">×</button>
+            </div>
+            <div className="flex-1 flex min-h-0">
+              <div className="w-80 shrink-0 border-r border-surface-border overflow-y-auto">
+                {listDocs === null ? (
+                  <p className="p-5 text-xs text-text-tertiary">Carregando...</p>
+                ) : listDocs.length === 0 ? (
+                  <p className="p-5 text-xs text-text-tertiary">Nenhum documento.</p>
+                ) : (
+                  listDocs.map((d) => (
+                    <button
+                      key={d.id}
+                      onClick={() => setPreviewId(d.id)}
+                      className={`w-full text-left px-4 py-2.5 border-b border-surface-border text-xs hover:bg-glass-hover ${previewId === d.id ? "bg-primary-muted text-primary" : "text-text-secondary"}`}
+                    >
+                      <p className="truncate">{d.file_name}</p>
+                      {d.qr_data && <p className="truncate text-[10px] text-text-disabled mt-0.5">{d.qr_data}</p>}
+                    </button>
+                  ))
+                )}
+              </div>
+              <div className="flex-1 bg-surface-0">
+                {previewId ? (
+                  <iframe key={previewId} src={`/api/documento/${previewId}?viewerId=admin&admin=true`} className="w-full h-full" />
+                ) : (
+                  <p className="p-5 text-xs text-text-tertiary">Clique num documento pra visualizar.</p>
+                )}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Como funciona */}
       <div className="glass-static rounded-lg p-6">

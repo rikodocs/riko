@@ -68,13 +68,13 @@ export async function POST(request: Request) {
   try {
     const supabase = createServerClient();
     const body = await request.json();
-    const { action, docId } = body as { action?: string; docId?: string };
+    const { action, docId } = body as { action?: string; docId?: string; skip?: string[]; qr?: string | null };
 
     if (action === "stats") {
       const [{ count: cnhCount }, { count: rgCount }, { count: otherCount }, { count: pendingCount }] = await Promise.all([
-        supabase.from("documents").select("id", { count: "exact", head: true }).eq("doc_category", "cnh_digital"),
-        supabase.from("documents").select("id", { count: "exact", head: true }).eq("doc_category", "rg_digital"),
-        supabase.from("documents").select("id", { count: "exact", head: true }).eq("doc_category", "outro"),
+        supabase.from("documents").select("id", { count: "exact", head: true }).eq("status", "pending_review").eq("doc_category", "cnh_digital"),
+        supabase.from("documents").select("id", { count: "exact", head: true }).eq("status", "pending_review").eq("doc_category", "rg_digital"),
+        supabase.from("documents").select("id", { count: "exact", head: true }).eq("status", "pending_review").eq("doc_category", "outro"),
         supabase.from("documents").select("id", { count: "exact", head: true }).eq("status", "pending_review").is("doc_category", null),
       ]);
       return NextResponse.json({
@@ -83,6 +83,54 @@ export async function POST(request: Request) {
         outro: otherCount || 0,
         pending_scan: pendingCount || 0,
       });
+    }
+
+    if (action === "next") {
+      const skip = (body.skip as string[] | undefined) || [];
+      let q = supabase
+        .from("documents")
+        .select("id, file_name, file_type")
+        .eq("status", "pending_review")
+        .is("doc_category", null)
+        .order("created_at", { ascending: true })
+        .limit(1);
+      if (skip.length) q = q.not("id", "in", `(${skip.join(",")})`);
+      const { data } = await q;
+      return NextResponse.json({ doc: data?.[0] || null });
+    }
+
+    if (action === "list") {
+      const category = body.category as string;
+      let q = supabase
+        .from("documents")
+        .select("id, file_name, file_type, qr_data, created_at")
+        .eq("status", "pending_review")
+        .order("created_at", { ascending: true })
+        .limit(500);
+      q = category === "pending_scan" ? q.is("doc_category", null) : q.eq("doc_category", category);
+      const { data } = await q;
+      return NextResponse.json({ docs: data || [] });
+    }
+
+    if (action === "reset") {
+      const { error } = await supabase
+        .from("documents")
+        .update({ doc_category: null, qr_data: null })
+        .eq("status", "pending_review")
+        .eq("doc_category", "outro");
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "save" && docId) {
+      const qr = (body.qr as string | null) || null;
+      const category: DocCategory = qr ? classifyQr(qr) : "outro";
+      const { error } = await supabase
+        .from("documents")
+        .update({ doc_category: category, qr_data: qr })
+        .eq("id", docId);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ id: docId, category });
     }
 
     if (action === "scan-one" && docId) {
