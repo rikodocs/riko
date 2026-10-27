@@ -280,8 +280,8 @@ export default function DashboardPage() {
         {/* Category counters */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-5">
           {([
-            ["cnh_digital", "text-success", "QR SENATRAN"],
-            ["rg_digital", "text-primary", "QR gov.br/cin"],
+            ["cnh_digital", "text-success", "Aprovado · no estoque"],
+            ["rg_digital", "text-primary", "Aprovado · no estoque"],
             ["outro", "text-text-secondary", "CNH física, RG físico, etc"],
             ["pending_scan", "text-warning", "Não escaneados"],
           ] as [Category, string, string][]).map(([cat, color, hint]) => (
@@ -358,7 +358,7 @@ export default function DashboardPage() {
             <strong className="text-text-secondary">2.</strong> Clique <strong className="text-text-secondary">Escanear</strong> — o sistema lê o QR code de cada PDF e separa em CNH Digital, RG Digital e Outros.
           </p>
           <p>
-            <strong className="text-text-secondary">3.</strong> CNH Digital com QR válido pode ir direto pro estoque. Outros vão pra moderação manual.
+            <strong className="text-text-secondary">3.</strong> CNH Digital e RG Digital são aprovados automaticamente e vão direto pro estoque. Outros vão pra moderação manual.
           </p>
           <p>
             <strong className="text-text-secondary">4.</strong> Operadores pegam do estoque em <code>/operacao</code> e baixam.

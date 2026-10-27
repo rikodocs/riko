@@ -74,9 +74,16 @@ export async function POST(request: Request) {
     const { action, docId } = body as { action?: string; docId?: string; skip?: string[]; qr?: string | null };
 
     if (action === "stats") {
+      // CNH/RG digital são sempre aprovados: garante que nenhum fique parado na moderação.
+      await supabase
+        .from("documents")
+        .update({ status: "available" })
+        .eq("status", "pending_review")
+        .in("doc_category", ["cnh_digital", "rg_digital"]);
+
       const [{ count: cnhCount }, { count: rgCount }, { count: otherCount }, { count: pendingCount }] = await Promise.all([
-        supabase.from("documents").select("id", { count: "exact", head: true }).eq("status", "pending_review").eq("doc_category", "cnh_digital"),
-        supabase.from("documents").select("id", { count: "exact", head: true }).eq("status", "pending_review").eq("doc_category", "rg_digital"),
+        supabase.from("documents").select("id", { count: "exact", head: true }).eq("status", "available").is("assigned_to", null).eq("doc_category", "cnh_digital"),
+        supabase.from("documents").select("id", { count: "exact", head: true }).eq("status", "available").is("assigned_to", null).eq("doc_category", "rg_digital"),
         supabase.from("documents").select("id", { count: "exact", head: true }).eq("status", "pending_review").eq("doc_category", "outro"),
         supabase.from("documents").select("id", { count: "exact", head: true }).eq("status", "pending_review").is("doc_category", null),
       ]);
@@ -107,10 +114,11 @@ export async function POST(request: Request) {
       let q = supabase
         .from("documents")
         .select("id, file_name, file_type, qr_data, created_at")
-        .eq("status", "pending_review")
         .order("created_at", { ascending: true })
         .limit(500);
-      q = category === "pending_scan" ? q.is("doc_category", null) : q.eq("doc_category", category);
+      if (category === "pending_scan") q = q.eq("status", "pending_review").is("doc_category", null);
+      else if (category === "outro") q = q.eq("status", "pending_review").eq("doc_category", "outro");
+      else q = q.eq("status", "available").is("assigned_to", null).eq("doc_category", category);
       const { data } = await q;
       return NextResponse.json({ docs: data || [] });
     }
@@ -135,9 +143,10 @@ export async function POST(request: Request) {
         if (TEXT_CNH.some((p) => text.includes(p))) category = "cnh_digital";
         else if (TEXT_RG.some((p) => text.includes(p))) category = "rg_digital";
       }
+      const digital = category === "cnh_digital" || category === "rg_digital";
       const { error } = await supabase
         .from("documents")
-        .update({ doc_category: category, qr_data: qr })
+        .update({ doc_category: category, qr_data: qr, ...(digital ? { status: "available" } : {}) })
         .eq("id", docId);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ id: docId, category });
