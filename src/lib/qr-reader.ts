@@ -1,4 +1,5 @@
 import jsQR from "jsqr";
+import { classifyByText } from "@/lib/doc-classify";
 
 type Detector = { detect(src: CanvasImageSource): Promise<{ rawValue: string }[]> };
 let detector: Detector | null | undefined;
@@ -39,7 +40,7 @@ async function ensureWorker(pdfjsLib: typeof import("pdfjs-dist")) {
 
 export interface DocScan { qr: string | null; text: string }
 
-async function readPdf(bytes: ArrayBuffer): Promise<DocScan> {
+async function readPdf(bytes: ArrayBuffer, textOnly: boolean): Promise<DocScan> {
   const pdfjsLib = await import("pdfjs-dist");
   await ensureWorker(pdfjsLib);
   const pdf = await pdfjsLib.getDocument({ data: bytes, useWorkerFetch: false, isEvalSupported: false }).promise;
@@ -51,16 +52,15 @@ async function readPdf(bytes: ArrayBuffer): Promise<DocScan> {
       .join(" ")
       .replace(/\s+/g, " ")
       .slice(0, 4000);
-    for (const scale of [2, 3.5]) {
-      const viewport = page.getViewport({ scale });
-      const canvas = document.createElement("canvas");
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      await page.render({ canvas, viewport }).promise;
-      const qr = await scanAny(canvas);
-      if (qr) return { qr, text };
-    }
-    return { qr: null, text };
+    // Texto já identifica CNH/RG digital — renderizar a página (a parte lenta) é desnecessário.
+    if (textOnly || classifyByText(text)) return { qr: null, text };
+
+    const viewport = page.getViewport({ scale: 2.5 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvas, viewport }).promise;
+    return { qr: await scanAny(canvas), text };
   } finally {
     pdf.destroy();
   }
@@ -81,8 +81,8 @@ export async function fetchDocBlob(docId: string): Promise<Blob> {
   return r.blob();
 }
 
-export async function readQrFromBlob(blob: Blob, fileType: string): Promise<DocScan> {
-  if (fileType === "application/pdf") return readPdf(await blob.arrayBuffer());
-  if (fileType.startsWith("image/")) return readImage(blob);
+export async function readQrFromBlob(blob: Blob, fileType: string, textOnly = false): Promise<DocScan> {
+  if (fileType === "application/pdf") return readPdf(await blob.arrayBuffer(), textOnly);
+  if (fileType.startsWith("image/") && !textOnly) return readImage(blob);
   return { qr: null, text: "" };
 }

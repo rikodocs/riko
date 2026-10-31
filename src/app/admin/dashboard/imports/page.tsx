@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { splitPdfPages } from "@/lib/pdf-split";
+import { readQrFromBlob } from "@/lib/qr-reader";
+import { classifyByText } from "@/lib/doc-classify";
 import { supabase } from "@/lib/supabase";
 
 interface DocRecord {
@@ -64,6 +66,7 @@ export default function ImportsPage() {
 
     let successCount = 0;
     let failedCount = 0;
+    let digitalCount = 0;
     const skippedDuplicates: string[] = [];
 
     // Helper: upload a single file with retry logic
@@ -78,6 +81,15 @@ export default function ImportsPage() {
         .replace(/^_|_$/g, "")
         || "doc";
       const fileName = `${Date.now()}_${index}_${baseName}.${ext}`;
+
+      // CNH/RG digital é reconhecido pelo texto do PDF e já entra aprovado no estoque.
+      let category: string | null = null;
+      if (file.type === "application/pdf") {
+        try {
+          const { text } = await readQrFromBlob(file, file.type, true);
+          category = classifyByText(text);
+        } catch { /* fica pro scanner */ }
+      }
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
@@ -102,8 +114,10 @@ export default function ImportsPage() {
             file_path: fileName,
             file_url: urlData.publicUrl,
             file_type: file.type,
-            status: "pending_review",
+            status: category ? "available" : "pending_review",
+            doc_category: category,
           });
+          if (!insertError && category) digitalCount++;
 
           return !insertError;
         } catch {
@@ -159,6 +173,7 @@ export default function ImportsPage() {
 
     const parts: string[] = [];
     if (successCount > 0) parts.push(`${successCount} importado(s)`);
+    if (digitalCount > 0) parts.push(`${digitalCount} CNH/RG digital já aprovado(s)`);
     if (skippedDuplicates.length > 0) parts.push(`${skippedDuplicates.length} duplicado(s)`);
     if (failedCount > 0) parts.push(`${failedCount} falha(s) no upload`);
 

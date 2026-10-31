@@ -32,7 +32,9 @@ async function splitIfMultiPage(doc: { id: string; file_name: string }, blob: Bl
   return pages.length;
 }
 
-type Category = "cnh_digital" | "rg_digital" | "outro" | "pending_scan";
+const CONCURRENCY = 6;
+
+type Category ="cnh_digital" | "rg_digital" | "outro" | "pending_scan";
 interface ListDoc { id: string; file_name: string; file_type: string; qr_data: string | null; created_at: string }
 const CAT_LABEL: Record<Category, string> = {
   cnh_digital: "CNH Digital", rg_digital: "RG Digital", outro: "Outros", pending_scan: "Aguardando scan",
@@ -110,61 +112,57 @@ export default function DashboardPage() {
     pausedRef.current = false;
     abortRef.current = false;
 
-    const totalToScan = scan.pending_scan;
+    let total = scan.pending_scan;
     let scanned = 0;
+    const tried = new Set<string>();
 
-    setProgress({ current: 0, total: totalToScan, lastFile: "", lastCategory: "" });
+    setProgress({ current: 0, total, lastFile: "", lastCategory: "" });
 
-    const failed: string[] = [];
-    try {
-      while (true) {
-        while (pausedRef.current && !abortRef.current) {
-          await new Promise((r) => setTimeout(r, 300));
-        }
-        if (abortRef.current) break;
+    const report = (file: string, label: string) =>
+      setProgress({ current: scanned, total, lastFile: file, lastCategory: label });
 
-        const nr = await api({ action: "next", skip: failed });
-        const doc = nr.doc as { id: string; file_name: string; file_type: string } | null;
-        if (!doc) break;
-
-        let res: DocScan;
-        try {
-          const blob = await fetchDocBlob(doc.id);
-          if (doc.file_type === "application/pdf") {
-            const parts = await splitIfMultiPage(doc, blob);
-            if (parts > 0) {
-              scanned++;
-              setScan((prev) => ({ ...prev, pending_scan: prev.pending_scan - 1 + parts }));
-              setProgress({ current: scanned, total: totalToScan, lastFile: doc.file_name, lastCategory: `Dividido em ${parts}` });
-              continue;
-            }
+    async function processOne(doc: { id: string; file_name: string; file_type: string }) {
+      try {
+        const blob = await fetchDocBlob(doc.id);
+        if (doc.file_type === "application/pdf") {
+          const parts = await splitIfMultiPage(doc, blob);
+          if (parts > 0) {
+            scanned++;
+            total += parts;
+            setScan((prev) => ({ ...prev, pending_scan: prev.pending_scan - 1 + parts }));
+            report(doc.file_name, `Dividido em ${parts}`);
+            return;
           }
-          res = await readQrFromBlob(blob, doc.file_type);
-        } catch {
-          failed.push(doc.id);
-          scanned++;
-          setProgress({ current: scanned, total: totalToScan, lastFile: doc.file_name, lastCategory: "erro" });
-          continue;
         }
+        const res: DocScan = await readQrFromBlob(blob, doc.file_type);
         const b = await api({ action: "save", docId: doc.id, qr: res.qr, text: res.text });
-        b.file_name = doc.file_name;
-
+        const cat = b.category as keyof ScanStats;
         scanned++;
-        const cat = b.category as string;
-        const catLabel = cat === "cnh_digital" ? "CNH Digital" : cat === "rg_digital" ? "RG Digital" : "Outro";
+        setScan((prev) => ({ ...prev, [cat]: prev[cat] + 1, pending_scan: Math.max(0, prev.pending_scan - 1) }));
+        report(doc.file_name, cat === "cnh_digital" ? "CNH Digital" : cat === "rg_digital" ? "RG Digital" : "Outro");
+      } catch {
+        scanned++;
+        report(doc.file_name, "erro");
+      }
+    }
 
-        setScan((prev) => ({
-          ...prev,
-          [cat]: (prev[cat as keyof ScanStats] || 0) + 1,
-          pending_scan: Math.max(0, prev.pending_scan - 1),
-        }));
+    try {
+      // Rodadas: cada rodada pega a fila atual; partes de PDFs divididos entram na rodada seguinte.
+      while (!abortRef.current) {
+        const { docs } = await api({ action: "pending" });
+        const queue = (docs as { id: string; file_name: string; file_type: string }[]).filter((d) => !tried.has(d.id));
+        if (queue.length === 0) break;
+        queue.forEach((d) => tried.add(d.id));
 
-        setProgress({
-          current: scanned,
-          total: totalToScan,
-          lastFile: b.file_name || `Doc ${scanned}`,
-          lastCategory: catLabel,
-        });
+        let i = 0;
+        const worker = async () => {
+          while (i < queue.length && !abortRef.current) {
+            while (pausedRef.current && !abortRef.current) await new Promise((r) => setTimeout(r, 300));
+            if (abortRef.current) return;
+            await processOne(queue[i++]);
+          }
+        };
+        await Promise.all(Array.from({ length: CONCURRENCY }, worker));
       }
     } catch (err) {
       setProgress((prev) => prev ? { ...prev, lastFile: `Erro: ${err instanceof Error ? err.message : "falha"}`, lastCategory: "erro" } : null);
