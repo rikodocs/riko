@@ -75,10 +75,13 @@ async function readImage(blob: Blob): Promise<DocScan> {
   return { qr: await scanAny(canvas), text: "" };
 }
 
-export async function readQrFromDoc(docId: string, fileType: string): Promise<DocScan> {
+export async function fetchDocBlob(docId: string): Promise<Blob> {
   const r = await fetch(`/api/documento/${docId}?viewerId=admin&admin=true`);
   if (!r.ok) throw new Error(`download falhou (${r.status})`);
-  const blob = await r.blob();
+  return r.blob();
+}
+
+export async function readQrFromBlob(blob: Blob, fileType: string): Promise<DocScan> {
   if (fileType === "application/pdf") return readPdf(await blob.arrayBuffer());
   if (fileType.startsWith("image/")) return readImage(blob);
   return { qr: null, text: "" };

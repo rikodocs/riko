@@ -3,7 +3,34 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
-import { readQrFromDoc, type DocScan } from "@/lib/qr-reader";
+import { fetchDocBlob, readQrFromBlob, type DocScan } from "@/lib/qr-reader";
+import { splitPdfPages } from "@/lib/pdf-split";
+
+async function splitIfMultiPage(doc: { id: string; file_name: string }, blob: Blob): Promise<number> {
+  const pages = await splitPdfPages(new File([blob], doc.file_name, { type: "application/pdf" }));
+  if (pages.length <= 1) return 0;
+
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i];
+    const safe = page.name.replace(/\.pdf$/i, "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-zA-Z0-9]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "") || "doc";
+    const path = `${Date.now()}_${i}_${safe}.pdf`;
+    const { error: upErr } = await supabase.storage.from("documents").upload(path, page);
+    if (upErr) throw new Error(upErr.message);
+    const { data: urlData } = supabase.storage.from("documents").getPublicUrl(path);
+    const { error: insErr } = await supabase.from("documents").insert({
+      file_name: page.name,
+      file_path: path,
+      file_url: urlData.publicUrl,
+      file_type: "application/pdf",
+      status: "pending_review",
+    });
+    if (insErr) throw new Error(insErr.message);
+  }
+  // Original fica guardado (não apagado), só sai da fila.
+  await supabase.from("documents").update({ status: "rejected", doc_category: "dividido" }).eq("id", doc.id);
+  return pages.length;
+}
 
 type Category = "cnh_digital" | "rg_digital" | "outro" | "pending_scan";
 interface ListDoc { id: string; file_name: string; file_type: string; qr_data: string | null; created_at: string }
@@ -102,7 +129,17 @@ export default function DashboardPage() {
 
         let res: DocScan;
         try {
-          res = await readQrFromDoc(doc.id, doc.file_type);
+          const blob = await fetchDocBlob(doc.id);
+          if (doc.file_type === "application/pdf") {
+            const parts = await splitIfMultiPage(doc, blob);
+            if (parts > 0) {
+              scanned++;
+              setScan((prev) => ({ ...prev, pending_scan: prev.pending_scan - 1 + parts }));
+              setProgress({ current: scanned, total: totalToScan, lastFile: doc.file_name, lastCategory: `Dividido em ${parts}` });
+              continue;
+            }
+          }
+          res = await readQrFromBlob(blob, doc.file_type);
         } catch {
           failed.push(doc.id);
           scanned++;
@@ -176,7 +213,7 @@ export default function DashboardPage() {
     setPaused(false);
   }
 
-  const pct = progress ? Math.round((progress.current / Math.max(progress.total, 1)) * 100) : 0;
+  const pct = progress ? Math.min(100, Math.round((progress.current / Math.max(progress.total, 1)) * 100)) : 0;
 
   const statCards = [
     { label: "Aguardando moderação", value: stats.pending, color: "text-warning" },
