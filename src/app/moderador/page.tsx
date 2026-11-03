@@ -6,7 +6,8 @@ import { supabase } from "@/lib/supabase";
 import { getViewerSession, clearViewerSession, homeForRole, type ViewerSession } from "@/lib/viewer-session";
 import DocumentCard from "@/components/DocumentCard";
 import AppShell, { type ShellTab } from "@/components/AppShell";
-import { FiCheckSquare, FiSend, FiGlobe, FiTool, FiUsers, FiInbox, FiPlus, FiTrash2, FiTag } from "react-icons/fi";
+import { FiCheckSquare, FiSend, FiGlobe, FiTool, FiUsers, FiInbox, FiPlus, FiTrash2, FiTag, FiShield } from "react-icons/fi";
+import ProxyPanel from "@/components/proxy/ProxyPanel";
 import EmptyState from "@/components/EmptyState";
 import SitesPanel from "@/components/SitesPanel";
 import FerramentasPanel from "@/components/ia/FerramentasPanel";
@@ -26,7 +27,7 @@ interface OperatorRow {
   downloaded: number;
 }
 
-type Tab = "revisar" | "distribuir" | "sites" | "ferramentas" | "equipe";
+type Tab = "revisar" | "distribuir" | "sites" | "ferramentas" | "equipe" | "proxies";
 
 export default function ModeradorPage() {
   const router = useRouter();
@@ -255,6 +256,7 @@ export default function ModeradorPage() {
     { value: "distribuir", label: "Distribuir", icon: <FiSend />, subtitle: "Envie os aprovados pros operadores" },
     { value: "sites", label: "Sites", icon: <FiGlobe />, subtitle: "Fila de CNPJ + URL pra operação" },
     { value: "ferramentas", label: "Ferramentas", icon: <FiTool />, subtitle: "Gerador de site e respostas OPC" },
+    { value: "proxies", label: "Proxies", icon: <FiShield />, subtitle: "Gere um proxy IPv6 por conta e acompanhe o histórico" },
     { value: "equipe", label: "Equipe", icon: <FiUsers />, subtitle: "Operadores, contas recebidas e financeiro" },
   ];
 
@@ -273,7 +275,9 @@ export default function ModeradorPage() {
           </div>
         )}
 
-        {tab === "equipe" ? (
+        {tab === "proxies" ? (
+          <ProxyPanel viewerId={session.id} isModerador />
+        ) : tab === "equipe" ? (
           <EquipePanel viewerId={session.id} />
         ) : tab === "ferramentas" ? (
           <FerramentasPanel viewerId={session.id} />

@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import JSZip from "jszip";
 import AppShell, { type ShellTab } from "@/components/AppShell";
-import { FiInbox, FiDownload, FiGlobe, FiTool, FiUpload, FiBookmark, FiFileText, FiChevronRight, FiUser } from "react-icons/fi";
+import { FiInbox, FiDownload, FiGlobe, FiTool, FiUpload, FiBookmark, FiFileText, FiChevronRight, FiUser, FiShield } from "react-icons/fi";
+import ProxyPanel from "@/components/proxy/ProxyPanel";
 import EmptyState from "@/components/EmptyState";
 import { supabase } from "@/lib/supabase";
 import SitesPanel from "@/components/SitesPanel";
@@ -39,7 +40,7 @@ interface OpDoc {
   person: PersonData | null;
 }
 
-type Tab = "novos" | "baixados" | "sites" | "ferramentas" | "contas" | "modelos";
+type Tab = "novos" | "baixados" | "sites" | "ferramentas" | "contas" | "modelos" | "proxies";
 
 function formatCpf(cpf: string) {
   const d = (cpf || "").replace(/\D/g, "");
@@ -333,6 +334,7 @@ export default function OperacaoPage() {
   const tabs: ShellTab<Tab>[] = [
     { value: "novos", label: "Novos", icon: <FiInbox />, badge: novos.length, subtitle: "Documentos que o moderador enviou pra você" },
     { value: "baixados", label: "Baixados", icon: <FiDownload />, subtitle: "O que você já baixou" },
+    { value: "proxies", label: "Proxies", icon: <FiShield />, subtitle: "Gere o proxy IPv6 da conta que vai criar" },
     { value: "contas", label: "Contas", icon: <FiUpload />, subtitle: "Suba a planilha e acompanhe seus envios" },
     { value: "modelos", label: "Modelos", icon: <FiBookmark />, subtitle: "Palavras-chave, títulos e descrições prontos" },
     { value: "sites", label: "Sites", icon: <FiGlobe />, subtitle: "Pegue o próximo CNPJ + URL da fila" },
@@ -382,7 +384,9 @@ export default function OperacaoPage() {
           </div>
         )}
 
-        {tab === "modelos" ? (
+        {tab === "proxies" ? (
+          <ProxyPanel viewerId={session.id} isModerador={false} />
+        ) : tab === "modelos" ? (
           <div className="w-full max-w-3xl animate-fade-in">
             <ModelosOperador viewerId={session.id} />
           </div>
