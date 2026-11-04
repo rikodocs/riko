@@ -9,9 +9,26 @@ type MikeyProxy = {
   protocolo: string; conexao: string; url: string; ref?: string; quem?: string;
 };
 
-async function mikey(method: "POST" | "DELETE", query = "", body?: unknown) {
-  const key = process.env.MIKEYADS_API_KEY;
-  if (!key) return { status: 500, data: { ok: false, error: "Chave da Mikey Ads não configurada no servidor (MIKEYADS_API_KEY)." } };
+// Cada fornecedor usa a própria chave (só em variável de ambiente).
+const KEY_ENV: Record<string, string> = {
+  riko: "MIKEYADS_API_KEY",
+  hustleads: "MIKEYADS_API_KEY_HUSTLEADS",
+};
+
+async function providerOf(supabase: ReturnType<typeof createServerClient>, viewerId: string) {
+  const { data: v } = await supabase.from("viewer_users").select("name, proxy_provider, moderador_id").eq("id", viewerId).single();
+  let provider = v?.proxy_provider as string | null;
+  if (!provider && v?.moderador_id) {
+    const { data: m } = await supabase.from("viewer_users").select("proxy_provider").eq("id", v.moderador_id).single();
+    provider = m?.proxy_provider ?? null;
+  }
+  return { name: (v?.name as string) || "riko", provider: provider && KEY_ENV[provider] ? provider : "riko" };
+}
+
+async function mikey(provider: string, method: "POST" | "DELETE", query = "", body?: unknown) {
+  const envName = KEY_ENV[provider] || KEY_ENV.riko;
+  const key = process.env[envName];
+  if (!key) return { status: 500, data: { ok: false, error: `Chave de proxy não configurada no servidor (${envName}).` } };
   try {
     const r = await fetch(`${MIKEY_URL}${query}`, {
       method,
@@ -42,9 +59,10 @@ export async function POST(request: Request) {
 
     const role = await getViewerRole(supabase, viewerId);
     if (!role) return NextResponse.json({ error: "Sessão inválida. Entre de novo." }, { status: 403 });
+    const { name: quem, provider } = await providerOf(supabase, viewerId!);
 
     if (action === "list") {
-      let q = supabase.from("proxies").select("*").order("created_at", { ascending: false }).limit(300);
+      let q = supabase.from("proxies").select("*").eq("provider", provider).order("created_at", { ascending: false }).limit(300);
       if (role !== "moderador") q = q.eq("viewer_id", viewerId!);
       const { data, error } = await q;
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -57,13 +75,10 @@ export async function POST(request: Request) {
 
       // Um proxy por conta: se já existe um ativo pra esse ref, devolve o mesmo.
       const { data: existente } = await supabase
-        .from("proxies").select("*").eq("ref", ref).eq("status", "ativo").maybeSingle();
+        .from("proxies").select("*").eq("ref", ref).eq("provider", provider).eq("status", "ativo").maybeSingle();
       if (existente) return NextResponse.json({ proxy: existente, reused: true });
 
-      const { data: viewer } = await supabase.from("viewer_users").select("name").eq("id", viewerId!).single();
-      const quem = viewer?.name || "riko";
-
-      const { status, data } = await mikey("POST", "", { ref, quem });
+      const { status, data } = await mikey(provider, "POST", "", { ref, quem });
       if (status !== 200 || !data?.ok || !data.proxy) {
         return NextResponse.json({ error: mikeyError(status, data?.error || "Não foi possível gerar o proxy.") }, { status: status === 503 ? 503 : 502 });
       }
@@ -71,12 +86,12 @@ export async function POST(request: Request) {
       const row = {
         id: p.id, viewer_id: viewerId, viewer_name: quem, ref,
         host: p.host, porta: p.porta, login: p.login, senha: p.senha, ip: p.ip,
-        protocolo: p.protocolo || "socks5", conexao: p.conexao, url: p.url, status: "ativo",
+        protocolo: p.protocolo || "socks5", conexao: p.conexao, url: p.url, status: "ativo", provider,
       };
       const { data: saved, error } = await supabase.from("proxies").insert(row).select().single();
       if (error) {
         // Não deixa proxy órfão na Mikey Ads se não conseguimos salvar
-        await mikey("DELETE", `?id=${encodeURIComponent(p.id)}`);
+        await mikey(provider, "DELETE", `?id=${encodeURIComponent(p.id)}`);
         return NextResponse.json({ error: "Erro ao salvar o proxy. Tente de novo." }, { status: 500 });
       }
       return NextResponse.json({ proxy: saved });
@@ -84,14 +99,14 @@ export async function POST(request: Request) {
 
     if (action === "liberar") {
       const id = String(body.id || "");
-      const { data: px } = await supabase.from("proxies").select("id, viewer_id, status").eq("id", id).maybeSingle();
+      const { data: px } = await supabase.from("proxies").select("id, viewer_id, status, provider").eq("id", id).maybeSingle();
       if (!px) return NextResponse.json({ error: "Proxy não encontrado." }, { status: 404 });
-      if (role !== "moderador" && px.viewer_id !== viewerId) {
+      if (px.provider !== provider || (role !== "moderador" && px.viewer_id !== viewerId)) {
         return NextResponse.json({ error: "Você só pode liberar os seus proxies." }, { status: 403 });
       }
       if (px.status === "liberado") return NextResponse.json({ ok: true });
 
-      const { status, data } = await mikey("DELETE", `?id=${encodeURIComponent(id)}`);
+      const { status, data } = await mikey(provider, "DELETE", `?id=${encodeURIComponent(id)}`);
       // 404 na Mikey = já não existe lá; marca como liberado mesmo assim
       if (!(status === 200 && data?.ok) && status !== 404) {
         return NextResponse.json({ error: mikeyError(status, data?.error || "Não foi possível liberar o proxy.") }, { status: 502 });
