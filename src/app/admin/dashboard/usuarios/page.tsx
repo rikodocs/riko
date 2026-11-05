@@ -472,7 +472,7 @@ export default function UsuariosPage() {
                     </td>
                     <td className="p-4">
                       {u.role === "moderador" ? (
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                        <div className="flex flex-wrap gap-1.5 w-[230px]">
                           {PERMS.map(([campo, label]) => (
                             <button
                               key={campo}
@@ -480,23 +480,15 @@ export default function UsuariosPage() {
                               role="switch"
                               aria-checked={u[campo]}
                               onClick={() => handleTogglePerm(u, campo)}
-                              className="group flex items-center gap-2.5 text-xs whitespace-nowrap"
-                              title={`Clique para ${u[campo] ? "desligar" : "ligar"}`}
+                              title={`${label}: clique para ${u[campo] ? "desligar" : "ligar"}`}
+                              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap transition-colors ${
+                                u[campo]
+                                  ? "border-primary/40 bg-primary-muted text-primary"
+                                  : "border-surface-border bg-surface-1 text-text-disabled hover:text-text-tertiary hover:border-surface-border-hover"
+                              }`}
                             >
-                              <span
-                                className={`relative inline-flex shrink-0 h-5 w-9 rounded-full border transition-colors duration-200 ${
-                                  u[campo]
-                                    ? "bg-primary border-primary"
-                                    : "bg-surface-2 border-surface-border group-hover:border-surface-border-hover"
-                                }`}
-                              >
-                                <span
-                                  className={`absolute left-0.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full shadow-sm transition-transform duration-200 ${
-                                    u[campo] ? "translate-x-4 bg-white" : "translate-x-0 bg-text-tertiary"
-                                  }`}
-                                />
-                              </span>
-                              <span className={u[campo] ? "text-text-primary font-medium" : "text-text-tertiary"}>{label}</span>
+                              <span className={`h-1.5 w-1.5 rounded-full ${u[campo] ? "bg-primary" : "bg-text-disabled"}`} />
+                              {label}
                             </button>
                           ))}
                         </div>
