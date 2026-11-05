@@ -463,14 +463,26 @@ export default function UsuariosPage() {
                             <button
                               key={campo}
                               type="button"
+                              role="switch"
+                              aria-checked={u[campo]}
                               onClick={() => handleTogglePerm(u, campo)}
-                              className="flex items-center gap-2 text-xs text-text-secondary whitespace-nowrap"
+                              className="group flex items-center gap-2.5 text-xs whitespace-nowrap"
                               title={`Clique para ${u[campo] ? "desligar" : "ligar"}`}
                             >
-                              <span className={`relative w-8 h-[18px] rounded-full transition-colors ${u[campo] ? "bg-primary" : "bg-surface-3"}`}>
-                                <span className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-transform ${u[campo] ? "translate-x-[16px]" : "translate-x-[2px]"}`} />
+                              <span
+                                className={`relative inline-flex shrink-0 h-5 w-9 rounded-full border transition-colors duration-200 ${
+                                  u[campo]
+                                    ? "bg-primary border-primary"
+                                    : "bg-surface-2 border-surface-border group-hover:border-surface-border-hover"
+                                }`}
+                              >
+                                <span
+                                  className={`absolute left-0.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full shadow-sm transition-transform duration-200 ${
+                                    u[campo] ? "translate-x-4 bg-white" : "translate-x-0 bg-text-tertiary"
+                                  }`}
+                                />
                               </span>
-                              {label}
+                              <span className={u[campo] ? "text-text-primary font-medium" : "text-text-tertiary"}>{label}</span>
                             </button>
                           ))}
                         </div>
