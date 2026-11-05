@@ -61,7 +61,6 @@ function CopyBtn({ value, label, big }: { value: string; label?: string; big?: b
 export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string; isModerador: boolean }) {
   const [proxies, setProxies] = useState<Proxy[]>([]);
   const [loading, setLoading] = useState(true);
-  const [ref, setRef] = useState("");
   const [gerando, setGerando] = useState(false);
   const [atual, setAtual] = useState<Proxy | null>(null);
   const [msg, setMsg] = useState<{ type: "error" | "success" | "warn"; text: string } | null>(null);
@@ -106,22 +105,17 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
   }, [load]);
 
   async function gerar() {
-    if (!ref.trim() || gerando) return;
+    if (gerando) return;
     setGerando(true);
     setMsg(null);
-    const { ok, status: st, data } = await call({ action: "gerar", ref: ref.trim() });
+    const { ok, status: st, data } = await call({ action: "gerar" });
     setGerando(false);
     if (!ok) {
       setMsg({ type: st === 503 ? "warn" : "error", text: data.error || "Erro ao gerar o proxy." });
       return;
     }
     setAtual(data.proxy);
-    setRef("");
-    setMsg(
-      data.reused
-        ? { type: "warn", text: "Essa conta já tinha um proxy ativo. Mostrando o mesmo." }
-        : { type: "success", text: "Proxy gerado. Copie e cole no AdsPower (SOCKS5)." }
-    );
+    setMsg({ type: "success", text: "Proxy gerado. É só copiar." });
     load();
   }
 
@@ -166,7 +160,7 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
   const lista = noPeriodo.filter(
     (p) =>
       (status === "todos" || p.status === status) &&
-      (!q || [p.ref, p.conexao, p.ip, p.viewer_name].some((v) => v?.toLowerCase().includes(q)))
+      (!q || [p.conexao, p.ip, p.viewer_name].some((v) => v?.toLowerCase().includes(q)))
   );
 
   const totalAtivos = proxies.filter((p) => p.status === "ativo").length;
@@ -196,26 +190,12 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
           <div>
             <p className="text-[15px] font-bold text-text-primary">Gerar proxy IPv6</p>
             <p className="text-[12px] text-text-tertiary">
-              Um por vez, só pra conta que você vai criar agora. Não expira. Fica salvo no histórico.
+              Um por clique, exclusivo e sem vencimento. Fica salvo no histórico.
             </p>
           </div>
         </div>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            gerar();
-          }}
-          className="flex flex-col sm:flex-row gap-2"
-        >
-          <input
-            value={ref}
-            onChange={(e) => setRef(e.target.value)}
-            placeholder="E-mail ou ID da conta que vai usar"
-            className="input-base flex-1"
-            disabled={gerando}
-            maxLength={200}
-          />
-          <button type="submit" className="btn-primary" disabled={!ref.trim() || gerando}>
+        <div className="flex">
+          <button type="button" onClick={gerar} className="btn-primary w-full sm:w-auto" disabled={gerando}>
             {gerando ? (
               <>
                 <div className="w-3.5 h-3.5 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
@@ -227,7 +207,7 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
               </>
             )}
           </button>
-        </form>
+        </div>
 
         {msg && (
           <div
@@ -250,8 +230,7 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
         <div className="glass-static rounded-lg p-5 border border-primary/30 animate-fade-in">
           <div className="flex items-center justify-between mb-3 gap-3">
             <div className="min-w-0">
-              <p className="text-[11px] uppercase tracking-wider text-text-tertiary font-semibold">Cole no AdsPower · SOCKS5</p>
-              <p className="text-[13px] text-text-secondary mt-0.5 truncate">{atual.ref}</p>
+              <p className="text-[11px] uppercase tracking-wider text-text-tertiary font-semibold">Seu proxy · SOCKS5 · IPv6</p>
             </div>
             <span className="badge badge-success">Ativo</span>
           </div>
@@ -293,7 +272,7 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
               <input
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
-                placeholder="Buscar conta, IP..."
+                placeholder="Buscar IP, login..."
                 className="input-base !pl-7 !py-1.5 !text-[12px] w-40 sm:w-52"
               />
             </div>
@@ -338,12 +317,12 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
               <div key={p.id} className="px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-glass-hover transition-colors">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-[13px] font-medium text-text-primary truncate">{p.ref || "—"}</p>
+                    <p className="text-[13px] font-mono font-medium text-text-primary truncate">{p.host}:{p.porta}</p>
                     <span className={`badge ${p.status === "ativo" ? "badge-success" : ""}`}>
                       {p.status === "ativo" ? "Ativo" : "Liberado"}
                     </span>
                   </div>
-                  <p className="text-[11px] font-mono text-text-tertiary truncate mt-0.5">{p.conexao}</p>
+                  <p className="text-[11px] font-mono text-text-tertiary truncate mt-0.5">{p.ip || p.conexao}</p>
                   <p className="text-[11px] text-text-disabled mt-0.5">
                     {fmt(p.created_at)}
                     {isModerador && p.viewer_name && <> · {p.viewer_name}</>}

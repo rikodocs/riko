@@ -70,21 +70,14 @@ export async function POST(request: Request) {
     }
 
     if (action === "gerar") {
-      const ref = String(body.ref || "").trim().slice(0, 200);
-      if (!ref) return NextResponse.json({ error: "Informe o e-mail ou ID da conta que vai usar o proxy." }, { status: 400 });
-
-      // Um proxy por conta: se já existe um ativo pra esse ref, devolve o mesmo.
-      const { data: existente } = await supabase
-        .from("proxies").select("*").eq("ref", ref).eq("provider", provider).eq("status", "ativo").maybeSingle();
-      if (existente) return NextResponse.json({ proxy: existente, reused: true });
-
+      const ref = viewerId!;
       const { status, data } = await mikey(provider, "POST", "", { ref, quem });
       if (status !== 200 || !data?.ok || !data.proxy) {
         return NextResponse.json({ error: mikeyError(status, data?.error || "Não foi possível gerar o proxy.") }, { status: status === 503 ? 503 : 502 });
       }
       const p = data.proxy as MikeyProxy;
       const row = {
-        id: p.id, viewer_id: viewerId, viewer_name: quem, ref,
+        id: p.id, viewer_id: viewerId, viewer_name: quem, ref: null,
         host: p.host, porta: p.porta, login: p.login, senha: p.senha, ip: p.ip,
         protocolo: p.protocolo || "socks5", conexao: p.conexao, url: p.url, status: "ativo", provider,
       };
