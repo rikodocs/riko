@@ -5,6 +5,7 @@ import { FiCopy, FiCheck, FiZap, FiTrash2, FiSearch, FiRefreshCw, FiShield, FiAl
 
 interface Proxy {
   id: string;
+  viewer_id: string | null;
   viewer_name: string | null;
   ref: string | null;
   host: string;
@@ -69,6 +70,8 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
   const [de, setDe] = useState("");
   const [ate, setAte] = useState("");
   const [busca, setBusca] = useState("");
+  const [equipe, setEquipe] = useState<{ id: string; name: string }[]>([]);
+  const [quem, setQuem] = useState("todos");
   const [liberando, setLiberando] = useState<string | null>(null);
   const [confirmar, setConfirmar] = useState<string | null>(null);
   const [agora, setAgora] = useState(0);
@@ -94,7 +97,10 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
     setLoading(true);
     const { ok, data } = await call({ action: "list" });
     setAgora(Date.now());
-    if (ok) setProxies(data.proxies || []);
+    if (ok) {
+      setProxies(data.proxies || []);
+      setEquipe(data.equipe || []);
+    }
     else setMsg({ type: "error", text: data.error || "Erro ao carregar o histórico." });
     setLoading(false);
   }, [call]);
@@ -146,7 +152,7 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
     }
     return proxies.filter((p) => {
       const t = new Date(p.created_at);
-      return (!min || t >= min) && (!max || t <= max);
+      return (!min || t >= min) && (!max || t <= max) && (quem === "todos" || p.viewer_id === quem);
     });
   })();
 
@@ -163,7 +169,7 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
       (!q || [p.conexao, p.ip, p.viewer_name].some((v) => v?.toLowerCase().includes(q)))
   );
 
-  const totalAtivos = proxies.filter((p) => p.status === "ativo").length;
+  const totalAtivos = proxies.filter((p) => p.status === "ativo" && (quem === "todos" || p.viewer_id === quem)).length;
 
   return (
     <div className="w-full max-w-4xl mx-auto flex flex-col gap-4 animate-fade-in">
@@ -298,6 +304,20 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
             )}
           </div>
 
+          {isModerador && equipe.length > 0 && (
+            <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
+              Quem gerou
+              <select value={quem} onChange={(e) => setQuem(e.target.value)} className="input-base !py-1.5 !text-[12px] min-w-[180px]">
+                <option value="todos">Toda a equipe</option>
+                {equipe.map((e, i) => (
+                  <option key={e.id} value={e.id}>
+                    {i === 0 ? `Só eu (${e.name})` : e.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="segmented self-start">
             {(["todos", "ativo", "liberado"] as Status[]).map((f) => (
               <button key={f} type="button" data-active={status === f} onClick={() => setStatus(f)}>
@@ -325,7 +345,7 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
                   <p className="text-[11px] font-mono text-text-tertiary truncate mt-0.5">{p.ip || p.conexao}</p>
                   <p className="text-[11px] text-text-disabled mt-0.5">
                     {fmt(p.created_at)}
-                    {isModerador && p.viewer_name && <> · {p.viewer_name}</>}
+                    {isModerador && p.viewer_name && <> · <span className="text-text-secondary">{p.viewer_id === equipe[0]?.id ? "Você" : p.viewer_name}</span></>}
                     {p.liberado_em && <> · liberado {fmt(p.liberado_em)}</>}
                   </p>
                 </div>

@@ -61,12 +61,21 @@ export async function POST(request: Request) {
     if (!role) return NextResponse.json({ error: "Sessão inválida. Entre de novo." }, { status: 403 });
     const { name: quem, provider } = await providerOf(supabase, viewerId!);
 
+    // Moderador enxerga ele + os operadores atrelados a ele; operador só ele mesmo.
+    let equipe: { id: string; name: string }[] = [{ id: viewerId!, name: quem }];
+    if (role === "moderador") {
+      const { data: ops } = await supabase
+        .from("viewer_users").select("id, name").eq("role", "operador").eq("moderador_id", viewerId!).order("name");
+      equipe = equipe.concat((ops || []) as { id: string; name: string }[]);
+    }
+    const idsEquipe = equipe.map((e) => e.id);
+
     if (action === "list") {
-      let q = supabase.from("proxies").select("*").eq("provider", provider).order("created_at", { ascending: false }).limit(300);
-      if (role !== "moderador") q = q.eq("viewer_id", viewerId!);
-      const { data, error } = await q;
+      const { data, error } = await supabase
+        .from("proxies").select("*").eq("provider", provider).in("viewer_id", idsEquipe)
+        .order("created_at", { ascending: false }).limit(500);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      return NextResponse.json({ proxies: data || [] });
+      return NextResponse.json({ proxies: data || [], equipe: role === "moderador" ? equipe : [] });
     }
 
     if (action === "gerar") {
@@ -94,8 +103,8 @@ export async function POST(request: Request) {
       const id = String(body.id || "");
       const { data: px } = await supabase.from("proxies").select("id, viewer_id, status, provider").eq("id", id).maybeSingle();
       if (!px) return NextResponse.json({ error: "Proxy não encontrado." }, { status: 404 });
-      if (px.provider !== provider || (role !== "moderador" && px.viewer_id !== viewerId)) {
-        return NextResponse.json({ error: "Você só pode liberar os seus proxies." }, { status: 403 });
+      if (px.provider !== provider || !idsEquipe.includes(px.viewer_id)) {
+        return NextResponse.json({ error: "Esse proxy não é seu nem da sua equipe." }, { status: 403 });
       }
       if (px.status === "liberado") return NextResponse.json({ ok: true });
 
