@@ -135,6 +135,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
+    if (action === "apagar") {
+      if (role !== "moderador") return NextResponse.json({ error: "Só o moderador pode apagar proxies." }, { status: 403 });
+      const id = String(body.id || "");
+      const { data: px } = await supabase.from("proxies").select("id, viewer_id, status, provider").eq("id", id).maybeSingle();
+      if (!px) return NextResponse.json({ ok: true });
+      if (px.provider !== provider || !idsEquipe.includes(px.viewer_id)) {
+        return NextResponse.json({ error: "Esse proxy não é seu nem da sua equipe." }, { status: 403 });
+      }
+      // Ativo: libera o IP na Mikey Ads antes de apagar, pra não ficar preso lá.
+      if (px.status === "ativo") {
+        const { status, data } = await mikey(provider, "DELETE", `?id=${encodeURIComponent(id)}`);
+        if (!(status === 200 && data?.ok) && status !== 404) {
+          return NextResponse.json({ error: mikeyError(status, data?.error || "Não foi possível liberar o proxy antes de apagar.") }, { status: 502 });
+        }
+      }
+      const { error } = await supabase.from("proxies").delete().eq("id", id);
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
+    }
+
     return NextResponse.json({ error: "Ação inválida." }, { status: 400 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Erro interno" }, { status: 500 });

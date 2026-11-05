@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FiCopy, FiCheck, FiZap, FiTrash2, FiSearch, FiRefreshCw, FiShield, FiAlertTriangle, FiDownload } from "react-icons/fi";
+import { FiCopy, FiCheck, FiZap, FiTrash2, FiPower, FiX, FiSearch, FiRefreshCw, FiShield, FiAlertTriangle, FiDownload } from "react-icons/fi";
 
 interface Proxy {
   id: string;
@@ -74,6 +74,8 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
   const [quem, setQuem] = useState("todos");
   const [liberando, setLiberando] = useState<string | null>(null);
   const [confirmar, setConfirmar] = useState<string | null>(null);
+  const [confirmarApagar, setConfirmarApagar] = useState<string | null>(null);
+  const [apagando, setApagando] = useState<string | null>(null);
   const [agora, setAgora] = useState(0);
   const [podeLote, setPodeLote] = useState(false);
   const [qtd, setQtd] = useState(10);
@@ -186,6 +188,21 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
     if (atual?.id === id) setAtual(null);
     setMsg({ type: "success", text: "Proxy liberado. Ele para de funcionar em alguns minutos." });
     load();
+  }
+
+  async function apagar(id: string) {
+    setApagando(id);
+    setConfirmarApagar(null);
+    const { ok, data } = await call({ action: "apagar", id });
+    setApagando(null);
+    if (!ok) {
+      setMsg({ type: "error", text: data.error || "Erro ao apagar." });
+      return;
+    }
+    if (atual?.id === id) setAtual(null);
+    setLote((l) => l.filter((p) => p.id !== id));
+    setProxies((l) => l.filter((p) => p.id !== id));
+    setMsg({ type: "success", text: "Proxy apagado do histórico." });
   }
 
   // Filtro de data primeiro; os contadores de status seguem o período escolhido.
@@ -465,30 +482,68 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
                     {p.liberado_em && <> · liberado {fmt(p.liberado_em)}</>}
                   </p>
                 </div>
-                {p.status === "ativo" && (
-                  <div className="flex items-center gap-2 shrink-0">
-                    <CopyBtn value={p.conexao} />
-                    {confirmar === p.id ? (
-                      <>
-                        <button type="button" onClick={() => liberar(p.id)} className="btn-ghost !px-2.5 !py-1.5 !text-[11px] !text-danger">
-                          Confirmar
-                        </button>
-                        <button type="button" onClick={() => setConfirmar(null)} className="btn-ghost !px-2.5 !py-1.5 !text-[11px]">
-                          Cancelar
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmar(p.id)}
-                        disabled={liberando === p.id}
-                        className="btn-ghost !px-2.5 !py-1.5 !text-[11px] hover:!text-danger"
-                      >
-                        <FiTrash2 /> {liberando === p.id ? "Liberando..." : "Liberar proxy"}
+                <div className="flex items-center gap-2 shrink-0">
+                  {confirmarApagar === p.id ? (
+                    <div className="flex items-center gap-2 rounded-full border border-danger/30 bg-danger-muted pl-3 pr-1 py-1 animate-fade-in">
+                      <span className="text-[11px] font-medium text-danger">
+                        {p.status === "ativo" ? "Liberar e apagar?" : "Apagar do histórico?"}
+                      </span>
+                      <button type="button" onClick={() => apagar(p.id)} className="rounded-full bg-danger px-2.5 py-1 text-[11px] font-semibold text-white hover:brightness-110">
+                        Apagar
                       </button>
-                    )}
-                  </div>
-                )}
+                      <button type="button" onClick={() => setConfirmarApagar(null)} className="w-6 h-6 rounded-full flex items-center justify-center text-danger/70 hover:text-danger" title="Cancelar">
+                        <FiX />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {p.status === "ativo" && (
+                        <>
+                          <CopyBtn value={p.conexao} />
+                          {confirmar === p.id ? (
+                            <>
+                              <button type="button" onClick={() => liberar(p.id)} className="btn-ghost !px-2.5 !py-1.5 !text-[11px] !text-warning">
+                                Confirmar
+                              </button>
+                              <button type="button" onClick={() => setConfirmar(null)} className="btn-ghost !px-2.5 !py-1.5 !text-[11px]">
+                                Cancelar
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmar(p.id)}
+                              disabled={liberando === p.id}
+                              className="btn-ghost !px-2.5 !py-1.5 !text-[11px] hover:!text-warning"
+                              title="Devolve o IP. O proxy para de funcionar em alguns minutos."
+                            >
+                              <FiPower /> {liberando === p.id ? "Liberando..." : "Liberar"}
+                            </button>
+                          )}
+                        </>
+                      )}
+                      {isModerador && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmar(null);
+                            setConfirmarApagar(p.id);
+                          }}
+                          disabled={apagando === p.id}
+                          className="w-8 h-8 rounded-full border border-surface-border flex items-center justify-center text-text-tertiary hover:text-danger hover:border-danger/40 hover:bg-danger-muted transition-colors disabled:opacity-40"
+                          title="Apagar do histórico"
+                          aria-label="Apagar proxy"
+                        >
+                          {apagando === p.id ? (
+                            <div className="w-3 h-3 border-2 border-danger/30 border-t-danger rounded-full animate-spin" />
+                          ) : (
+                            <FiTrash2 className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             ))}
           </div>
