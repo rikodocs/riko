@@ -114,7 +114,6 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
   }, [call]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
@@ -147,9 +146,18 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
     for (let i = 0; i < total; i++) {
       if (pararRef.current) break;
       setProgresso({ feito: i, total });
-      const { ok, status: st, data } = await call({ action: "gerar", lote: true });
+      // Falha temporária (limite, sem IP livre, rede): espera e tenta de novo antes de parar.
+      let r = await call({ action: "gerar", lote: true });
+      const esperas = [3000, 8000, 15000, 30000];
+      for (let t = 0; !r.ok && (r.data?.retry || r.status === 0) && t < esperas.length && !pararRef.current; t++) {
+        setMsg({ type: "warn", text: `${r.data?.error || "Falha temporária"} Tentando de novo em ${esperas[t] / 1000}s...` });
+        await new Promise((res) => setTimeout(res, esperas[t]));
+        r = await call({ action: "gerar", lote: true });
+      }
+      if (r.ok) setMsg(null);
+      const { ok, status: st, data } = r;
       if (!ok) {
-        erro = { type: st === 503 ? "warn" : "error", text: data.error || "Erro ao gerar o proxy." };
+        erro = { type: st === 503 || st === 429 ? "warn" : "error", text: data.error || "Erro ao gerar o proxy." };
         break;
       }
       feitos.push(data.proxy);

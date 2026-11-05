@@ -53,7 +53,14 @@ function mikeyError(status: number, fallback: string) {
   if (status === 0) return "Sem conexão com a Mikey Ads. Verifique a internet e tente de novo.";
   if (status === 401) return "Chave da Mikey Ads inválida (401). Avise o administrador.";
   if (status === 503) return "Nenhum IP livre no momento. Tente de novo em 1 minuto.";
-  return fallback;
+  if (status === 429) return "A Mikey Ads pediu pra ir mais devagar (429). Aguarde alguns segundos.";
+  return status ? `${fallback} (Mikey Ads respondeu ${status})` : fallback;
+}
+
+// A Mikey pode mandar a mensagem em campos diferentes.
+function mikeyMsg(data: Record<string, unknown> | null | undefined): string | undefined {
+  const m = data?.error ?? data?.erro ?? data?.mensagem ?? data?.message;
+  return typeof m === "string" && m.trim() ? m.trim() : undefined;
 }
 
 export async function POST(request: Request) {
@@ -102,8 +109,13 @@ export async function POST(request: Request) {
 
       const ref = viewerId!;
       const { status, data } = await mikey(provider, "POST", "", { ref, quem });
-      if (status !== 200 || !data?.ok || !data.proxy) {
-        return NextResponse.json({ error: mikeyError(status, data?.error || "Não foi possível gerar o proxy.") }, { status: status === 503 ? 503 : 502 });
+      if (status < 200 || status >= 300 || !data?.ok || !data.proxy) {
+        console.error("[proxy] Mikey gerar falhou", status, JSON.stringify(data).slice(0, 500));
+        const transitorio = status === 0 || status === 429 || status >= 500;
+        return NextResponse.json(
+          { error: mikeyError(status, mikeyMsg(data) || "Não foi possível gerar o proxy."), retry: transitorio },
+          { status: status === 503 || status === 429 ? status : 502 }
+        );
       }
       const p = data.proxy as MikeyProxy;
       const row = {
@@ -132,7 +144,7 @@ export async function POST(request: Request) {
       const { status, data } = await mikey(provider, "DELETE", `?id=${encodeURIComponent(id)}`);
       // 404 na Mikey = já não existe lá; marca como liberado mesmo assim
       if (!(status === 200 && data?.ok) && status !== 404) {
-        return NextResponse.json({ error: mikeyError(status, data?.error || "Não foi possível liberar o proxy.") }, { status: 502 });
+        return NextResponse.json({ error: mikeyError(status, mikeyMsg(data) || "Não foi possível liberar o proxy.") }, { status: 502 });
       }
       await supabase.from("proxies").update({ status: "liberado", liberado_em: new Date().toISOString() }).eq("id", id);
       return NextResponse.json({ ok: true });
@@ -150,7 +162,7 @@ export async function POST(request: Request) {
       // Se a Mikey não confirmar, não apaga: o proxy continuaria funcionando.
       const { status, data } = await mikey(provider, "DELETE", `?id=${encodeURIComponent(id)}`);
       if (!(status === 200 && data?.ok) && status !== 404) {
-        return NextResponse.json({ error: mikeyError(status, data?.error || "Não foi possível desativar o proxy. Nada foi apagado.") }, { status: 502 });
+        return NextResponse.json({ error: mikeyError(status, mikeyMsg(data) || "Não foi possível desativar o proxy. Nada foi apagado.") }, { status: 502 });
       }
       const { error } = await supabase.from("proxies").delete().eq("id", id);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
