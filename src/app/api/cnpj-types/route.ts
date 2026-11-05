@@ -1,3 +1,4 @@
+import { bloqueioModerador } from "@/lib/permissoes";
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
 import { getViewerRole } from "@/lib/viewer-role";
@@ -16,6 +17,8 @@ export async function POST(request: Request) {
 
     if (!viewerId) return NextResponse.json({ error: "Sem viewerId." }, { status: 400 });
 
+    const bloqueio = await bloqueioModerador(supabase, viewerId, "docs");
+    if (bloqueio) return bloqueio;
     const role = await getViewerRole(supabase, viewerId);
     if (role !== "moderador") {
       return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });

@@ -202,7 +202,7 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
     if (atual?.id === id) setAtual(null);
     setLote((l) => l.filter((p) => p.id !== id));
     setProxies((l) => l.filter((p) => p.id !== id));
-    setMsg({ type: "success", text: "Proxy apagado do histórico." });
+    setMsg({ type: "success", text: "Proxy desativado e apagado. Ele para de funcionar em alguns minutos." });
   }
 
   // Filtro de data primeiro; os contadores de status seguem o período escolhido.
@@ -486,7 +486,7 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
                   {confirmarApagar === p.id ? (
                     <div className="flex items-center gap-2 rounded-full border border-danger/30 bg-danger-muted pl-3 pr-1 py-1 animate-fade-in">
                       <span className="text-[11px] font-medium text-danger">
-                        {p.status === "ativo" ? "Liberar e apagar?" : "Apagar do histórico?"}
+                        Desativar e apagar?
                       </span>
                       <button type="button" onClick={() => apagar(p.id)} className="rounded-full bg-danger px-2.5 py-1 text-[11px] font-semibold text-white hover:brightness-110">
                         Apagar
@@ -531,7 +531,7 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
                           }}
                           disabled={apagando === p.id}
                           className="w-8 h-8 rounded-full border border-surface-border flex items-center justify-center text-text-tertiary hover:text-danger hover:border-danger/40 hover:bg-danger-muted transition-colors disabled:opacity-40"
-                          title="Apagar do histórico"
+                          title="Desativa o proxy e apaga"
                           aria-label="Apagar proxy"
                         >
                           {apagando === p.id ? (

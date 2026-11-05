@@ -1,3 +1,4 @@
+import { bloqueioModerador } from "@/lib/permissoes";
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
 import { getViewerRole } from "@/lib/viewer-role";
@@ -24,6 +25,8 @@ export async function POST(request: Request) {
         licencaDetentor?: string;
       };
 
+    const bloqueio = await bloqueioModerador(supabase, viewerId, "ferramentas");
+    if (bloqueio) return bloqueio;
     if (!(await getViewerRole(supabase, viewerId))) {
       return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
     }

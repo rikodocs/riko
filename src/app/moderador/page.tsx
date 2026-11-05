@@ -33,7 +33,7 @@ export default function ModeradorPage() {
   const router = useRouter();
   const [session, setSession] = useState<ViewerSession | null>(null);
   const [tab, setTab] = useState<Tab>("revisar");
-  const [acessoDocs, setAcessoDocs] = useState<boolean | null>(null);
+  const [acessos, setAcessos] = useState<Record<string, boolean> | null>(null);
 
   // Revisar
   const [doc, setDoc] = useState<QueueDoc | null>(null);
@@ -127,14 +127,22 @@ export default function ModeradorPage() {
     setSession(s);
     supabase
       .from("viewer_users")
-      .select("acesso_docs")
+      .select("*")
       .eq("id", s.id)
       .single()
       .then(({ data }) => {
-        const pode = data?.acesso_docs !== false;
-        setAcessoDocs(pode);
-        if (pode) loadNext(s.id);
-        else setTab("proxies");
+        const pode = (k: string) => data?.[`acesso_${k}`] !== false;
+        const a: Record<string, boolean> = {
+          revisar: pode("docs"),
+          distribuir: pode("docs"),
+          sites: pode("sites"),
+          ferramentas: pode("ferramentas"),
+          equipe: pode("equipe"),
+          proxies: pode("proxies"),
+        };
+        setAcessos(a);
+        if (a.revisar) loadNext(s.id);
+        else setTab((["sites", "ferramentas", "equipe", "proxies"] as Tab[]).find((t) => a[t]) ?? "proxies");
       });
   }, [router, loadNext]);
 
@@ -260,7 +268,7 @@ export default function ModeradorPage() {
     }
   }
 
-  if (!session || acessoDocs === null) return null;
+  if (!session || acessos === null) return null;
 
   const todasAbas: ShellTab<Tab>[] = [
     { value: "revisar", label: "Revisar", icon: <FiCheckSquare />, badge: pending, subtitle: "Digite o CPF, consulte e aprove ou recuse" },
@@ -270,7 +278,7 @@ export default function ModeradorPage() {
     { value: "proxies", label: "Proxies", icon: <FiShield />, subtitle: "Gere um proxy IPv6 por conta e acompanhe o histórico" },
     { value: "equipe", label: "Equipe", icon: <FiUsers />, subtitle: "Operadores, contas recebidas e financeiro" },
   ];
-  const tabs = acessoDocs ? todasAbas : todasAbas.filter((t) => t.value !== "revisar" && t.value !== "distribuir");
+  const tabs = todasAbas.filter((t) => acessos[t.value]);
 
   return (
     <AppShell role="Moderador" userName={session.name} tabs={tabs} tab={tab} onTab={setTab} onLogout={handleLogout}>
@@ -287,7 +295,12 @@ export default function ModeradorPage() {
           </div>
         )}
 
-        {tab === "proxies" ? (
+        {!acessos[tab] ? (
+          <div className="glass-static rounded-lg p-8 text-center max-w-sm">
+            <p className="text-text-primary font-medium mb-1">Nenhuma área liberada</p>
+            <p className="text-text-tertiary text-sm">Fale com o administrador para liberar seu acesso.</p>
+          </div>
+        ) : tab === "proxies" ? (
           <ProxyPanel viewerId={session.id} isModerador />
         ) : tab === "equipe" ? (
           <EquipePanel viewerId={session.id} />

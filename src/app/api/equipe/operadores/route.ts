@@ -1,3 +1,4 @@
+import { bloqueioModerador } from "@/lib/permissoes";
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
 import { getViewer } from "@/lib/equipe";
@@ -16,6 +17,8 @@ export async function POST(request: Request) {
       active?: boolean;
     };
 
+    const bloqueio = await bloqueioModerador(supabase, viewerId, "equipe");
+    if (bloqueio) return bloqueio;
     const viewer = await getViewer(supabase, viewerId);
     if (!viewer || viewer.role !== "moderador") {
       return NextResponse.json({ error: "Só moderadores gerenciam operadores." }, { status: 403 });

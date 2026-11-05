@@ -29,10 +29,24 @@ interface ViewerUserRow {
   email: string | null;
   moderador_id: string | null;
   acesso_docs: boolean;
+  acesso_sites: boolean;
+  acesso_ferramentas: boolean;
+  acesso_equipe: boolean;
+  acesso_proxies: boolean;
   proxy_lote: boolean;
   in_hands: number;
   downloaded: number;
 }
+
+const PERMS = [
+  ["acesso_docs", "Docs"],
+  ["acesso_sites", "Sites"],
+  ["acesso_ferramentas", "Ferramentas"],
+  ["acesso_equipe", "Equipe"],
+  ["acesso_proxies", "Proxies"],
+  ["proxy_lote", "Proxy em lote"],
+] as const;
+type CampoPerm = (typeof PERMS)[number][0];
 
 interface HistoryRow {
   id: string;
@@ -86,7 +100,7 @@ export default function UsuariosPage() {
     const rows: ViewerUserRow[] = (viewerUsers || []).map((u) => {
       const role: Role = u.role === "moderador" ? "moderador" : "operador";
       const c = role === "operador" ? contagem.get(u.id) : undefined;
-      return { ...u, role, moderador_id: u.moderador_id ?? null, acesso_docs: u.acesso_docs !== false, proxy_lote: u.proxy_lote === true, in_hands: c?.in_hands ?? 0, downloaded: c?.downloaded ?? 0 };
+      return { ...u, role, moderador_id: u.moderador_id ?? null, acesso_docs: u.acesso_docs !== false, acesso_sites: u.acesso_sites !== false, acesso_ferramentas: u.acesso_ferramentas !== false, acesso_equipe: u.acesso_equipe !== false, acesso_proxies: u.acesso_proxies !== false, proxy_lote: u.proxy_lote === true, in_hands: c?.in_hands ?? 0, downloaded: c?.downloaded ?? 0 };
     });
     setUsers(rows);
     setLoading(false);
@@ -245,13 +259,13 @@ export default function UsuariosPage() {
     loadUsers();
   }
 
-  async function handleTogglePerm(user: ViewerUserRow, campo: "acesso_docs" | "proxy_lote") {
+  async function handleTogglePerm(user: ViewerUserRow, campo: CampoPerm) {
     const { error } = await supabase.from("viewer_users").update({ [campo]: !user[campo] }).eq("id", user.id);
     if (error) {
       setMessage({ type: "error", text: `Erro ao salvar permissão: ${error.message}. Rode a migration v22 no Supabase.` });
       return;
     }
-    const nome = campo === "acesso_docs" ? "Acesso aos Docs" : "Proxy em lote";
+    const nome = PERMS.find(([c]) => c === campo)?.[1] ?? campo;
     setMessage({ type: "success", text: `${nome} ${user[campo] ? "desligado" : "ligado"} para ${user.name}.` });
     loadUsers();
   }
@@ -458,8 +472,8 @@ export default function UsuariosPage() {
                     </td>
                     <td className="p-4">
                       {u.role === "moderador" ? (
-                        <div className="flex flex-col gap-1.5">
-                          {([["acesso_docs", "Docs"], ["proxy_lote", "Proxy em lote"]] as const).map(([campo, label]) => (
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                          {PERMS.map(([campo, label]) => (
                             <button
                               key={campo}
                               type="button"

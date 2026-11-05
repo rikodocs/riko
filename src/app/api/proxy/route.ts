@@ -1,3 +1,4 @@
+import { bloqueioModerador } from "@/lib/permissoes";
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
 import { getViewerRole } from "@/lib/viewer-role";
@@ -61,6 +62,8 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { viewerId, action } = body as { viewerId?: string; action?: string };
 
+    const bloqueio = await bloqueioModerador(supabase, viewerId, "proxies");
+    if (bloqueio) return bloqueio;
     const role = await getViewerRole(supabase, viewerId);
     if (!role) return NextResponse.json({ error: "Sessão inválida. Entre de novo." }, { status: 403 });
     const { name: quem, provider, lote: podeLote } = await providerOf(supabase, viewerId!);
@@ -143,12 +146,11 @@ export async function POST(request: Request) {
       if (px.provider !== provider || !idsEquipe.includes(px.viewer_id)) {
         return NextResponse.json({ error: "Esse proxy não é seu nem da sua equipe." }, { status: 403 });
       }
-      // Ativo: libera o IP na Mikey Ads antes de apagar, pra não ficar preso lá.
-      if (px.status === "ativo") {
-        const { status, data } = await mikey(provider, "DELETE", `?id=${encodeURIComponent(id)}`);
-        if (!(status === 200 && data?.ok) && status !== 404) {
-          return NextResponse.json({ error: mikeyError(status, data?.error || "Não foi possível liberar o proxy antes de apagar.") }, { status: 502 });
-        }
+      // Sempre derruba o proxy na Mikey Ads antes de apagar (404 = já não existe lá).
+      // Se a Mikey não confirmar, não apaga: o proxy continuaria funcionando.
+      const { status, data } = await mikey(provider, "DELETE", `?id=${encodeURIComponent(id)}`);
+      if (!(status === 200 && data?.ok) && status !== 404) {
+        return NextResponse.json({ error: mikeyError(status, data?.error || "Não foi possível desativar o proxy. Nada foi apagado.") }, { status: 502 });
       }
       const { error } = await supabase.from("proxies").delete().eq("id", id);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
