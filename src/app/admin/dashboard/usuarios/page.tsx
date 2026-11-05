@@ -28,6 +28,8 @@ interface ViewerUserRow {
   role: Role;
   email: string | null;
   moderador_id: string | null;
+  acesso_docs: boolean;
+  proxy_lote: boolean;
   in_hands: number;
   downloaded: number;
 }
@@ -63,7 +65,7 @@ export default function UsuariosPage() {
   const loadUsers = useCallback(async () => {
     const { data: viewerUsers } = await supabase
       .from("viewer_users")
-      .select("id, code, name, active, role, email, moderador_id")
+      .select("*")
       .order("role", { ascending: true })
       .order("created_at", { ascending: false });
 
@@ -84,7 +86,7 @@ export default function UsuariosPage() {
     const rows: ViewerUserRow[] = (viewerUsers || []).map((u) => {
       const role: Role = u.role === "moderador" ? "moderador" : "operador";
       const c = role === "operador" ? contagem.get(u.id) : undefined;
-      return { ...u, role, moderador_id: u.moderador_id ?? null, in_hands: c?.in_hands ?? 0, downloaded: c?.downloaded ?? 0 };
+      return { ...u, role, moderador_id: u.moderador_id ?? null, acesso_docs: u.acesso_docs !== false, proxy_lote: u.proxy_lote === true, in_hands: c?.in_hands ?? 0, downloaded: c?.downloaded ?? 0 };
     });
     setUsers(rows);
     setLoading(false);
@@ -240,6 +242,17 @@ export default function UsuariosPage() {
       return;
     }
     setMessage({ type: "success", text: `${user.name} agora responde a ${users.find((m) => m.id === moderadorId)?.name ?? "ninguém"}.` });
+    loadUsers();
+  }
+
+  async function handleTogglePerm(user: ViewerUserRow, campo: "acesso_docs" | "proxy_lote") {
+    const { error } = await supabase.from("viewer_users").update({ [campo]: !user[campo] }).eq("id", user.id);
+    if (error) {
+      setMessage({ type: "error", text: `Erro ao salvar permissão: ${error.message}. Rode a migration v22 no Supabase.` });
+      return;
+    }
+    const nome = campo === "acesso_docs" ? "Acesso aos Docs" : "Proxy em lote";
+    setMessage({ type: "success", text: `${nome} ${user[campo] ? "desligado" : "ligado"} para ${user.name}.` });
     loadUsers();
   }
 
@@ -407,6 +420,7 @@ export default function UsuariosPage() {
                 <th className="p-4">Papel</th>
                 <th className="p-4">Acesso</th>
                 <th className="p-4">Moderador</th>
+                <th className="p-4">Permissões</th>
                 <th className="p-4">Em mãos</th>
                 <th className="p-4">Baixados</th>
                 <th className="p-4">Status</th>
@@ -442,6 +456,28 @@ export default function UsuariosPage() {
                         <span className="text-text-disabled">—</span>
                       )}
                     </td>
+                    <td className="p-4">
+                      {u.role === "moderador" ? (
+                        <div className="flex flex-col gap-1.5">
+                          {([["acesso_docs", "Docs"], ["proxy_lote", "Proxy em lote"]] as const).map(([campo, label]) => (
+                            <button
+                              key={campo}
+                              type="button"
+                              onClick={() => handleTogglePerm(u, campo)}
+                              className="flex items-center gap-2 text-xs text-text-secondary whitespace-nowrap"
+                              title={`Clique para ${u[campo] ? "desligar" : "ligar"}`}
+                            >
+                              <span className={`relative w-8 h-[18px] rounded-full transition-colors ${u[campo] ? "bg-primary" : "bg-surface-3"}`}>
+                                <span className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-transform ${u[campo] ? "translate-x-[16px]" : "translate-x-[2px]"}`} />
+                              </span>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-text-disabled">—</span>
+                      )}
+                    </td>
                     <td className="p-4 text-text-secondary font-mono">{u.role === "operador" ? u.in_hands : "—"}</td>
                     <td className="p-4 text-text-tertiary font-mono">{u.role === "operador" ? u.downloaded : "—"}</td>
                     <td className="p-4">
@@ -462,7 +498,7 @@ export default function UsuariosPage() {
                   </tr>
                   {historyTarget === u.id && (
                     <tr className="border-b border-surface-border last:border-0">
-                      <td colSpan={8} className="p-4 bg-surface-0">
+                      <td colSpan={9} className="p-4 bg-surface-0">
                         {historyLoading ? (
                           <p className="text-text-tertiary text-xs">Carregando histórico...</p>
                         ) : historyRows.length === 0 ? (

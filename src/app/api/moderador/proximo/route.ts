@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
-import { getViewerRole } from "@/lib/viewer-role";
+import { getViewerRole, temAcessoDocs } from "@/lib/viewer-role";
 
 // Trava de revisão expira depois disso — se o moderador fechou a aba no meio,
 // outro moderador consegue pegar o documento.
@@ -16,6 +16,9 @@ export async function POST(request: Request) {
 
     if ((await getViewerRole(supabase, viewerId)) !== "moderador") {
       return NextResponse.json({ error: "Acesso restrito a moderadores." }, { status: 403 });
+    }
+    if (!(await temAcessoDocs(supabase, viewerId))) {
+      return NextResponse.json({ error: "Seu acesso não inclui Docs." }, { status: 403 });
     }
 
     // Solta travas velhas

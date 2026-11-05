@@ -16,13 +16,17 @@ const KEY_ENV: Record<string, string> = {
 };
 
 async function providerOf(supabase: ReturnType<typeof createServerClient>, viewerId: string) {
-  const { data: v } = await supabase.from("viewer_users").select("name, proxy_provider, moderador_id").eq("id", viewerId).single();
+  const { data: v } = await supabase.from("viewer_users").select("*").eq("id", viewerId).single();
   let provider = v?.proxy_provider as string | null;
   if (!provider && v?.moderador_id) {
     const { data: m } = await supabase.from("viewer_users").select("proxy_provider").eq("id", v.moderador_id).single();
     provider = m?.proxy_provider ?? null;
   }
-  return { name: (v?.name as string) || "riko", provider: provider && KEY_ENV[provider] ? provider : "riko" };
+  return {
+    name: (v?.name as string) || "riko",
+    provider: provider && KEY_ENV[provider] ? provider : "riko",
+    lote: v?.role === "moderador" && v?.proxy_lote === true,
+  };
 }
 
 async function mikey(provider: string, method: "POST" | "DELETE", query = "", body?: unknown) {
@@ -59,7 +63,7 @@ export async function POST(request: Request) {
 
     const role = await getViewerRole(supabase, viewerId);
     if (!role) return NextResponse.json({ error: "Sessão inválida. Entre de novo." }, { status: 403 });
-    const { name: quem, provider } = await providerOf(supabase, viewerId!);
+    const { name: quem, provider, lote: podeLote } = await providerOf(supabase, viewerId!);
 
     // Moderador enxerga ele + os operadores atrelados a ele; operador só ele mesmo.
     let equipe: { id: string; name: string }[] = [{ id: viewerId!, name: quem }];
@@ -75,10 +79,24 @@ export async function POST(request: Request) {
         .from("proxies").select("*").eq("provider", provider).in("viewer_id", idsEquipe)
         .order("created_at", { ascending: false }).limit(500);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      return NextResponse.json({ proxies: data || [], equipe: role === "moderador" ? equipe : [] });
+      return NextResponse.json({ proxies: data || [], equipe: role === "moderador" ? equipe : [], podeLote });
     }
 
     if (action === "gerar") {
+      // Sem permissão de lote: um por vez, com intervalo mínimo entre pedidos.
+      if (body.lote && !podeLote) {
+        return NextResponse.json({ error: "Seu acesso não permite gerar em lote." }, { status: 403 });
+      }
+      if (!podeLote) {
+        const { data: ultimo } = await supabase
+          .from("proxies").select("created_at").eq("viewer_id", viewerId!)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        const espera = ultimo ? 10000 - (Date.now() - new Date(ultimo.created_at).getTime()) : 0;
+        if (espera > 0) {
+          return NextResponse.json({ error: `Aguarde ${Math.ceil(espera / 1000)}s pra gerar outro.` }, { status: 429 });
+        }
+      }
+
       const ref = viewerId!;
       const { status, data } = await mikey(provider, "POST", "", { ref, quem });
       if (status !== 200 || !data?.ok || !data.proxy) {

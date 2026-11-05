@@ -33,6 +33,7 @@ export default function ModeradorPage() {
   const router = useRouter();
   const [session, setSession] = useState<ViewerSession | null>(null);
   const [tab, setTab] = useState<Tab>("revisar");
+  const [acessoDocs, setAcessoDocs] = useState<boolean | null>(null);
 
   // Revisar
   const [doc, setDoc] = useState<QueueDoc | null>(null);
@@ -124,7 +125,17 @@ export default function ModeradorPage() {
       return;
     }
     setSession(s);
-    loadNext(s.id);
+    supabase
+      .from("viewer_users")
+      .select("acesso_docs")
+      .eq("id", s.id)
+      .single()
+      .then(({ data }) => {
+        const pode = data?.acesso_docs !== false;
+        setAcessoDocs(pode);
+        if (pode) loadNext(s.id);
+        else setTab("proxies");
+      });
   }, [router, loadNext]);
 
   const loadCnpjTypes = useCallback(async (vid: string) => {
@@ -249,9 +260,9 @@ export default function ModeradorPage() {
     }
   }
 
-  if (!session) return null;
+  if (!session || acessoDocs === null) return null;
 
-  const tabs: ShellTab<Tab>[] = [
+  const todasAbas: ShellTab<Tab>[] = [
     { value: "revisar", label: "Revisar", icon: <FiCheckSquare />, badge: pending, subtitle: "Digite o CPF, consulte e aprove ou recuse" },
     { value: "distribuir", label: "Distribuir", icon: <FiSend />, subtitle: "Envie os aprovados pros operadores" },
     { value: "sites", label: "Sites", icon: <FiGlobe />, subtitle: "Fila de CNPJ + URL pra operação" },
@@ -259,6 +270,7 @@ export default function ModeradorPage() {
     { value: "proxies", label: "Proxies", icon: <FiShield />, subtitle: "Gere um proxy IPv6 por conta e acompanhe o histórico" },
     { value: "equipe", label: "Equipe", icon: <FiUsers />, subtitle: "Operadores, contas recebidas e financeiro" },
   ];
+  const tabs = acessoDocs ? todasAbas : todasAbas.filter((t) => t.value !== "revisar" && t.value !== "distribuir");
 
   return (
     <AppShell role="Moderador" userName={session.name} tabs={tabs} tab={tab} onTab={setTab} onLogout={handleLogout}>

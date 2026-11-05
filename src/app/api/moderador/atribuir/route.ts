@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
-import { getViewerRole } from "@/lib/viewer-role";
+import { getViewerRole, temAcessoDocs } from "@/lib/viewer-role";
 
 // Moderador distribui N documentos aprovados (estoque livre) pra um operador.
 export async function POST(request: Request) {
@@ -18,6 +18,9 @@ export async function POST(request: Request) {
     }
     if ((await getViewerRole(supabase, viewerId)) !== "moderador") {
       return NextResponse.json({ error: "Acesso restrito a moderadores." }, { status: 403 });
+    }
+    if (!(await temAcessoDocs(supabase, viewerId))) {
+      return NextResponse.json({ error: "Seu acesso não inclui Docs." }, { status: 403 });
     }
     if ((await getViewerRole(supabase, operatorId)) !== "operador") {
       return NextResponse.json({ error: "Operador inválido ou inativo." }, { status: 400 });

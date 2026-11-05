@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
 import { salvarPessoaConsultada, type PersonFields } from "@/lib/consulta";
-import { getViewerRole } from "@/lib/viewer-role";
+import { getViewerRole, temAcessoDocs } from "@/lib/viewer-role";
 
 interface CpfEntry {
   cpf: string;
@@ -34,6 +34,9 @@ export async function POST(request: Request) {
     }
     if ((await getViewerRole(supabase, viewerId)) !== "moderador") {
       return NextResponse.json({ error: "Acesso restrito a moderadores." }, { status: 403 });
+    }
+    if (!(await temAcessoDocs(supabase, viewerId))) {
+      return NextResponse.json({ error: "Seu acesso não inclui Docs." }, { status: 403 });
     }
 
     const { data: doc, error: docError } = await supabase

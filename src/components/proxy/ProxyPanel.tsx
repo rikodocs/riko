@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { FiCopy, FiCheck, FiZap, FiTrash2, FiSearch, FiRefreshCw, FiShield, FiAlertTriangle } from "react-icons/fi";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FiCopy, FiCheck, FiZap, FiTrash2, FiSearch, FiRefreshCw, FiShield, FiAlertTriangle, FiDownload } from "react-icons/fi";
 
 interface Proxy {
   id: string;
@@ -75,6 +75,11 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
   const [liberando, setLiberando] = useState<string | null>(null);
   const [confirmar, setConfirmar] = useState<string | null>(null);
   const [agora, setAgora] = useState(0);
+  const [podeLote, setPodeLote] = useState(false);
+  const [qtd, setQtd] = useState(10);
+  const [lote, setLote] = useState<Proxy[]>([]);
+  const [progresso, setProgresso] = useState<{ feito: number; total: number } | null>(null);
+  const pararRef = useRef(false);
 
   const call = useCallback(
     async (body: Record<string, unknown>) => {
@@ -100,6 +105,7 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
     if (ok) {
       setProxies(data.proxies || []);
       setEquipe(data.equipe || []);
+      setPodeLote(data.podeLote === true);
     }
     else setMsg({ type: "error", text: data.error || "Erro ao carregar o histórico." });
     setLoading(false);
@@ -123,6 +129,49 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
     setAtual(data.proxy);
     setMsg({ type: "success", text: "Proxy gerado. É só copiar." });
     load();
+  }
+
+  async function gerarLote() {
+    if (gerando) return;
+    const total = Math.max(1, Math.min(100, Math.floor(qtd) || 1));
+    setGerando(true);
+    setMsg(null);
+    setAtual(null);
+    setLote([]);
+    pararRef.current = false;
+    const feitos: Proxy[] = [];
+    let erro: { type: "error" | "warn"; text: string } | null = null;
+    // Um pedido por proxy, em sequência (a API gera um por chamada).
+    for (let i = 0; i < total; i++) {
+      if (pararRef.current) break;
+      setProgresso({ feito: i, total });
+      const { ok, status: st, data } = await call({ action: "gerar", lote: true });
+      if (!ok) {
+        erro = { type: st === 503 ? "warn" : "error", text: data.error || "Erro ao gerar o proxy." };
+        break;
+      }
+      feitos.push(data.proxy);
+      setLote([...feitos]);
+    }
+    setProgresso(null);
+    setGerando(false);
+    const resumo = `${feitos.length} de ${total} proxies gerados.`;
+    if (erro) setMsg({ type: erro.type, text: `${resumo} Parou: ${erro.text}` });
+    else if (pararRef.current) setMsg({ type: "warn", text: `${resumo} Interrompido.` });
+    else setMsg({ type: "success", text: `${resumo} Copie todos ou baixe o .txt.` });
+    load();
+  }
+
+  function baixarTxt(lista: Proxy[]) {
+    const blob = new Blob([lista.map((p) => p.conexao).join("\r\n")], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `proxies_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   async function liberar(id: string) {
@@ -200,20 +249,61 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
             </p>
           </div>
         </div>
-        <div className="flex">
-          <button type="button" onClick={gerar} className="btn-primary w-full sm:w-auto" disabled={gerando}>
-            {gerando ? (
-              <>
-                <div className="w-3.5 h-3.5 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
-                Gerando...
-              </>
-            ) : (
-              <>
-                <FiZap /> Gerar proxy
-              </>
+        {podeLote ? (
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] text-text-tertiary">Quantidade</span>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={qtd}
+                onChange={(e) => setQtd(Number(e.target.value))}
+                disabled={gerando}
+                className="input-base !py-2 w-24 text-center font-mono"
+              />
+            </div>
+            <button type="button" onClick={gerarLote} className="btn-primary" disabled={gerando}>
+              {gerando && progresso ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
+                  Gerando {progresso.feito + 1}/{progresso.total}
+                </>
+              ) : (
+                <>
+                  <FiZap /> Gerar {Math.max(1, Math.min(100, Math.floor(qtd) || 1))} proxies
+                </>
+              )}
+            </button>
+            {gerando && (
+              <button type="button" onClick={() => (pararRef.current = true)} className="btn-ghost">
+                Parar
+              </button>
             )}
-          </button>
-        </div>
+            <span className="text-[11px] text-text-disabled sm:ml-auto">Máx. 100 por lote</span>
+          </div>
+        ) : (
+          <div className="flex">
+            <button type="button" onClick={gerar} className="btn-primary w-full sm:w-auto" disabled={gerando}>
+              {gerando ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
+                  Gerando...
+                </>
+              ) : (
+                <>
+                  <FiZap /> Gerar proxy
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
+        {progresso && (
+          <div className="mt-3 h-1.5 w-full rounded-full bg-surface-2 overflow-hidden">
+            <div className="h-full bg-primary transition-all duration-300" style={{ width: `${(progresso.feito / progresso.total) * 100}%` }} />
+          </div>
+        )}
 
         {msg && (
           <div
@@ -230,6 +320,32 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
           </div>
         )}
       </div>
+
+      {/* Lote gerado */}
+      {lote.length > 0 && (
+        <div className="glass-static rounded-lg p-5 border border-primary/30 animate-fade-in">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <p className="text-[11px] uppercase tracking-wider text-text-tertiary font-semibold">
+              Lote · {lote.length} proxies · SOCKS5 · IPv6
+            </p>
+            <div className="flex gap-2">
+              <CopyBtn value={lote.map((p) => p.conexao).join("\n")} label="Copiar todas" />
+              <button type="button" onClick={() => baixarTxt(lote)} className="btn-ghost !px-2.5 !py-1.5 !text-[11px]">
+                <FiDownload /> Baixar .txt
+              </button>
+            </div>
+          </div>
+          <div className="max-h-72 overflow-auto rounded-md bg-surface-0 border border-surface-border divide-y divide-surface-border">
+            {lote.map((p, i) => (
+              <div key={p.id} className="flex items-center gap-3 px-3 py-2">
+                <span className="text-[11px] font-mono text-text-disabled w-6 text-right">{i + 1}</span>
+                <code className="flex-1 min-w-0 text-[12px] font-mono text-text-primary truncate">{p.conexao}</code>
+                <CopyBtn value={p.conexao} label="" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Proxy recém-gerado */}
       {atual && (

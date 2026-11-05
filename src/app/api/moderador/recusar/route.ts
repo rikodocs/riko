@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
-import { getViewerRole } from "@/lib/viewer-role";
+import { getViewerRole, temAcessoDocs } from "@/lib/viewer-role";
 
 // Recusa do moderador: o documento vira "rejected_mod" e fica anotado quem
 // recusou e por quê. Nada é apagado do Storage.
@@ -20,6 +20,9 @@ export async function POST(request: Request) {
     }
     if ((await getViewerRole(supabase, viewerId)) !== "moderador") {
       return NextResponse.json({ error: "Acesso restrito a moderadores." }, { status: 403 });
+    }
+    if (!(await temAcessoDocs(supabase, viewerId))) {
+      return NextResponse.json({ error: "Seu acesso não inclui Docs." }, { status: 403 });
     }
 
     const { data: doc, error: docError } = await supabase

@@ -16,3 +16,10 @@ export async function getViewerRole(
   if (!data || !data.active) return null;
   return data.role === "moderador" ? "moderador" : "operador";
 }
+
+// Moderador com acesso aos Docs (revisar/distribuir). Definido no /admin.
+export async function temAcessoDocs(supabase: SupabaseClient, viewerId: string | undefined): Promise<boolean> {
+  if (!viewerId) return false;
+  const { data } = await supabase.from("viewer_users").select("acesso_docs").eq("id", viewerId).single();
+  return data?.acesso_docs !== false;
+}
