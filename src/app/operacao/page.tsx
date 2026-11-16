@@ -334,7 +334,7 @@ export default function OperacaoPage() {
   const tabs: ShellTab<Tab>[] = [
     { value: "novos", label: "Novos", icon: <FiInbox />, badge: novos.length, subtitle: "Documentos que o moderador enviou pra você" },
     { value: "baixados", label: "Baixados", icon: <FiDownload />, subtitle: "O que você já baixou" },
-    { value: "proxies", label: "Proxies", icon: <FiShield />, subtitle: "Gere o proxy IPv6 da conta que vai criar" },
+    { value: "proxies", label: "Proxies", icon: <FiShield />, subtitle: "Gere proxies IPv6, com ou sem prazo" },
     { value: "contas", label: "Contas", icon: <FiUpload />, subtitle: "Suba a planilha e acompanhe seus envios" },
     { value: "modelos", label: "Modelos", icon: <FiBookmark />, subtitle: "Palavras-chave, títulos e descrições prontos" },
     { value: "sites", label: "Sites", icon: <FiGlobe />, subtitle: "Pegue o próximo CNPJ + URL da fila" },

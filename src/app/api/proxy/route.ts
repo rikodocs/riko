@@ -2,19 +2,14 @@ import { bloqueioModerador } from "@/lib/permissoes";
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
 import { getViewerRole } from "@/lib/viewer-role";
+import { KEY_ENV, mikey, expirarVencidos, PRAZOS_DIAS } from "@/lib/proxy-mikey";
 
-const MIKEY_URL = "https://www.mikeyads.io/api/equipe/proxy";
 
 type MikeyProxy = {
   id: string; host: string; porta: number; login: string; senha: string; ip: string;
   protocolo: string; conexao: string; url: string; ref?: string; quem?: string;
 };
 
-// Cada fornecedor usa a própria chave (só em variável de ambiente).
-const KEY_ENV: Record<string, string> = {
-  riko: "MIKEYADS_API_KEY",
-  hustleads: "MIKEYADS_API_KEY_HUSTLEADS",
-};
 
 async function providerOf(supabase: ReturnType<typeof createServerClient>, viewerId: string) {
   const { data: v } = await supabase.from("viewer_users").select("*").eq("id", viewerId).single();
@@ -30,24 +25,6 @@ async function providerOf(supabase: ReturnType<typeof createServerClient>, viewe
   };
 }
 
-async function mikey(provider: string, method: "POST" | "DELETE", query = "", body?: unknown) {
-  const envName = KEY_ENV[provider] || KEY_ENV.riko;
-  const key = process.env[envName];
-  if (!key) return { status: 500, data: { ok: false, error: `Chave de proxy não configurada no servidor (${envName}).` } };
-  try {
-    const r = await fetch(`${MIKEY_URL}${query}`, {
-      method,
-      headers: { "x-api-key": key, "Content-Type": "application/json" },
-      body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(20000),
-      cache: "no-store",
-    });
-    const data = await r.json().catch(() => ({ ok: false }));
-    return { status: r.status, data };
-  } catch {
-    return { status: 0, data: { ok: false } };
-  }
-}
 
 function mikeyError(status: number, fallback: string) {
   if (status === 0) return "Sem conexão com a Mikey Ads. Verifique a internet e tente de novo.";
@@ -84,7 +61,9 @@ export async function POST(request: Request) {
     }
     const idsEquipe = equipe.map((e) => e.id);
 
+    // Quem abre o painel também faz a limpeza dos vencidos (a tarefa diária é só reforço).
     if (action === "list") {
+      await expirarVencidos(supabase);
       const { data, error } = await supabase
         .from("proxies").select("*").eq("provider", provider).in("viewer_id", idsEquipe)
         .order("created_at", { ascending: false }).limit(500);
@@ -107,6 +86,12 @@ export async function POST(request: Request) {
         }
       }
 
+      const dias = body.dias == null ? null : Number(body.dias);
+      if (dias !== null && !PRAZOS_DIAS.includes(dias)) {
+        return NextResponse.json({ error: "Prazo inválido." }, { status: 400 });
+      }
+      const expira_em = dias ? new Date(Date.now() + dias * 86400000).toISOString() : null;
+
       const ref = viewerId!;
       const { status, data } = await mikey(provider, "POST", "", { ref, quem });
       if (status < 200 || status >= 300 || !data?.ok || !data.proxy) {
@@ -121,7 +106,7 @@ export async function POST(request: Request) {
       const row = {
         id: p.id, viewer_id: viewerId, viewer_name: quem, ref: null,
         host: p.host, porta: p.porta, login: p.login, senha: p.senha, ip: p.ip,
-        protocolo: p.protocolo || "socks5", conexao: p.conexao, url: p.url, status: "ativo", provider,
+        protocolo: p.protocolo || "socks5", conexao: p.conexao, url: p.url, status: "ativo", provider, expira_em,
       };
       const { data: saved, error } = await supabase.from("proxies").insert(row).select().single();
       if (error) {
@@ -139,7 +124,7 @@ export async function POST(request: Request) {
       if (px.provider !== provider || !idsEquipe.includes(px.viewer_id)) {
         return NextResponse.json({ error: "Esse proxy não é seu nem da sua equipe." }, { status: 403 });
       }
-      if (px.status === "liberado") return NextResponse.json({ ok: true });
+      if (px.status !== "ativo") return NextResponse.json({ ok: true });
 
       const { status, data } = await mikey(provider, "DELETE", `?id=${encodeURIComponent(id)}`);
       // 404 na Mikey = já não existe lá; marca como liberado mesmo assim

@@ -275,7 +275,7 @@ export default function ModeradorPage() {
     { value: "distribuir", label: "Distribuir", icon: <FiSend />, subtitle: "Envie os aprovados pros operadores" },
     { value: "sites", label: "Sites", icon: <FiGlobe />, subtitle: "Fila de CNPJ + URL pra operação" },
     { value: "ferramentas", label: "Ferramentas", icon: <FiTool />, subtitle: "Gerador de site e respostas OPC" },
-    { value: "proxies", label: "Proxies", icon: <FiShield />, subtitle: "Gere um proxy IPv6 por conta e acompanhe o histórico" },
+    { value: "proxies", label: "Proxies", icon: <FiShield />, subtitle: "Gere proxies IPv6, com ou sem prazo, e acompanhe o histórico" },
     { value: "equipe", label: "Equipe", icon: <FiUsers />, subtitle: "Operadores, contas recebidas e financeiro" },
   ];
   const tabs = todasAbas.filter((t) => acessos[t.value]);

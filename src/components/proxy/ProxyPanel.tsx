@@ -14,12 +14,32 @@ interface Proxy {
   senha: string;
   ip: string | null;
   conexao: string;
-  status: "ativo" | "liberado";
+  status: "ativo" | "liberado" | "expirado";
   created_at: string;
   liberado_em: string | null;
+  expira_em: string | null;
 }
 
-type Status = "ativo" | "liberado" | "todos";
+type Status = "ativo" | "liberado" | "expirado" | "todos";
+
+const PRAZOS: [number | null, string][] = [
+  [null, "Sem prazo"],
+  [1, "1 dia"],
+  [3, "3 dias"],
+  [7, "7 dias"],
+  [15, "15 dias"],
+  [30, "30 dias"],
+  [60, "60 dias"],
+  [90, "90 dias"],
+];
+
+function venceTexto(iso: string, agoraMs: number) {
+  const ms = new Date(iso).getTime() - agoraMs;
+  if (ms <= 0) return "vencendo agora";
+  const d = Math.floor(ms / 86400000);
+  const h = Math.floor((ms % 86400000) / 3600000);
+  return d > 0 ? `vence em ${d}d ${h}h` : `vence em ${h}h`;
+}
 type Periodo = "hoje" | "7d" | "30d" | "tudo" | "custom";
 
 const PERIODOS: [Periodo, string][] = [
@@ -78,6 +98,7 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
   const [apagando, setApagando] = useState<string | null>(null);
   const [agora, setAgora] = useState(0);
   const [podeLote, setPodeLote] = useState(false);
+  const [dias, setDias] = useState<number | null>(null);
   const [qtd, setQtd] = useState(10);
   const [lote, setLote] = useState<Proxy[]>([]);
   const [progresso, setProgresso] = useState<{ feito: number; total: number } | null>(null);
@@ -121,7 +142,7 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
     if (gerando) return;
     setGerando(true);
     setMsg(null);
-    const { ok, status: st, data } = await call({ action: "gerar" });
+    const { ok, status: st, data } = await call({ action: "gerar", dias });
     setGerando(false);
     if (!ok) {
       setMsg({ type: st === 503 ? "warn" : "error", text: data.error || "Erro ao gerar o proxy." });
@@ -147,12 +168,12 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
       if (pararRef.current) break;
       setProgresso({ feito: i, total });
       // Falha temporária (limite, sem IP livre, rede): espera e tenta de novo antes de parar.
-      let r = await call({ action: "gerar", lote: true });
+      let r = await call({ action: "gerar", lote: true, dias });
       const esperas = [3000, 8000, 15000, 30000];
       for (let t = 0; !r.ok && (r.data?.retry || r.status === 0) && t < esperas.length && !pararRef.current; t++) {
         setMsg({ type: "warn", text: `${r.data?.error || "Falha temporária"} Tentando de novo em ${esperas[t] / 1000}s...` });
         await new Promise((res) => setTimeout(res, esperas[t]));
-        r = await call({ action: "gerar", lote: true });
+        r = await call({ action: "gerar", lote: true, dias });
       }
       if (r.ok) setMsg(null);
       const { ok, status: st, data } = r;
@@ -233,6 +254,7 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
   const counts = {
     ativo: noPeriodo.filter((p) => p.status === "ativo").length,
     liberado: noPeriodo.filter((p) => p.status === "liberado").length,
+    expirado: noPeriodo.filter((p) => p.status === "expirado").length,
     todos: noPeriodo.length,
   };
 
@@ -270,10 +292,34 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
           <div>
             <p className="text-[15px] font-bold text-text-primary">Gerar proxy IPv6</p>
             <p className="text-[12px] text-text-tertiary">
-              Um por clique, exclusivo e sem vencimento. Fica salvo no histórico.
+              Exclusivo, com ou sem prazo. Fica salvo no histórico.
             </p>
           </div>
         </div>
+        <div className="mb-3">
+          <p className="text-[11px] uppercase tracking-wider text-text-tertiary font-semibold mb-1.5">Prazo</p>
+          <div className="flex flex-wrap gap-1.5">
+            {PRAZOS.map(([v, label]) => (
+              <button
+                key={label}
+                type="button"
+                disabled={gerando}
+                onClick={() => setDias(v)}
+                className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+                  dias === v
+                    ? "border-primary/50 bg-primary-muted text-primary"
+                    : "border-surface-border bg-surface-1 text-text-tertiary hover:text-text-primary hover:border-surface-border-hover"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-text-disabled mt-1.5">
+            {dias ? `Desativa sozinho em ${dias} dia${dias > 1 ? "s" : ""}.` : "Fica ativo até alguém liberar ou apagar."}
+          </p>
+        </div>
+
         {podeLote ? (
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
             <div className="flex items-center gap-2">
@@ -379,7 +425,10 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
             <div className="min-w-0">
               <p className="text-[11px] uppercase tracking-wider text-text-tertiary font-semibold">Seu proxy · SOCKS5 · IPv6</p>
             </div>
-            <span className="badge badge-success">Ativo</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-text-tertiary">{atual.expira_em ? venceTexto(atual.expira_em, Date.now()) : "sem prazo"}</span>
+              <span className="badge badge-success">Ativo</span>
+            </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 items-stretch">
             <code className="flex-1 min-w-0 rounded-md bg-surface-0 border border-surface-border px-3 py-3 text-[13px] font-mono text-text-primary break-all">
@@ -460,9 +509,9 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
           )}
 
           <div className="segmented self-start">
-            {(["todos", "ativo", "liberado"] as Status[]).map((f) => (
+            {(["todos", "ativo", "liberado", "expirado"] as Status[]).map((f) => (
               <button key={f} type="button" data-active={status === f} onClick={() => setStatus(f)}>
-                {f === "ativo" ? "Ativos" : f === "liberado" ? "Liberados" : "Todos"} ({counts[f]})
+                {f === "ativo" ? "Ativos" : f === "liberado" ? "Liberados" : f === "expirado" ? "Expirados" : "Todos"} ({counts[f]})
               </button>
             ))}
           </div>
@@ -479,15 +528,16 @@ export default function ProxyPanel({ viewerId, isModerador }: { viewerId: string
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-[13px] font-mono font-medium text-text-primary truncate">{p.host}:{p.porta}</p>
-                    <span className={`badge ${p.status === "ativo" ? "badge-success" : ""}`}>
-                      {p.status === "ativo" ? "Ativo" : "Liberado"}
+                    <span className={`badge ${p.status === "ativo" ? "badge-success" : p.status === "expirado" ? "badge-warning" : ""}`}>
+                      {p.status === "ativo" ? "Ativo" : p.status === "expirado" ? "Expirado" : "Liberado"}
                     </span>
                   </div>
                   <p className="text-[11px] font-mono text-text-tertiary truncate mt-0.5">{p.ip || p.conexao}</p>
                   <p className="text-[11px] text-text-disabled mt-0.5">
                     {fmt(p.created_at)}
                     {isModerador && p.viewer_name && <> · <span className="text-text-secondary">{p.viewer_id === equipe[0]?.id ? "Você" : p.viewer_name}</span></>}
-                    {p.liberado_em && <> · liberado {fmt(p.liberado_em)}</>}
+                    {p.status === "ativo" && (p.expira_em ? <> · <span className="text-warning">{venceTexto(p.expira_em, agora)}</span></> : <> · sem prazo</>)}
+                    {p.liberado_em && <> · {p.status === "expirado" ? "expirou" : "liberado"} {fmt(p.liberado_em)}</>}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
